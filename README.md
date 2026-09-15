@@ -76,18 +76,18 @@ nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
 
 | Area | State | Steam side |
 | --- | --- | --- |
-| Init, render, input, overlapped, enumerators, notifications | done | `SteamAPI_RunCallbacks` pump, `GameOverlayActivated_t` -> `XN_SYS_UI` |
-| Users, sign-in, privileges, contexts, properties | done | `ISteamUser`, `ISteamFriends` (persona), rich presence |
-| Achievements (write, enumerate, pictures) | done | `ISteamUserStats` achievements, SPA for text and art, per-user record when the app has no Steam achievement schema |
-| Profile settings | done | one Steam Cloud file, defaults from Steam for the read-only ones |
-| Title managed storage (`XStorage*`) | done | Steam Cloud per user, shipped folder per title |
-| Friends, presence, invites | done | `ISteamFriends`, lobby invites, `+connect_lobby` |
-| Sessions, search, arbitration | done | `ISteamMatchmaking` lobbies and lobby data |
-| Stats and leaderboards | done | `ISteamUserStats` leaderboards, details array for extra columns |
-| Networking (`XNet*`, `XSocket*`, QoS) | done, UDP tested path first | `ISteamNetworkingMessages` (UDP), `ISteamNetworkingSockets` P2P (TCP), Winsock for title servers |
-| Guide UI (`XShow*`) | done | Steam overlay pages, native dialogs for keyboard and message box |
-| Content and marketplace (DLC) | done | `ISteamApps` DLC list, store overlay |
-| XLocator server list | done for peer hosted | tagged public lobbies |
+| Init, render, input, overlapped, enumerators, notifications | implemented | `SteamAPI_RunCallbacks` pump, `GameOverlayActivated_t` -> `XN_SYS_UI` |
+| Users, sign-in, privileges, contexts, properties | implemented | `ISteamUser`, `ISteamFriends` (persona), rich presence |
+| Achievements (write, enumerate, pictures) | implemented | `ISteamUserStats` achievements, SPA for text and art, per-user record when the app has no Steam achievement schema |
+| Profile settings | implemented | one Steam Cloud file, defaults from Steam for the read-only ones |
+| Title managed storage (`XStorage*`) | implemented | Steam Cloud per user, shipped folder per title, files next to the exe when the app's Cloud refuses API writes |
+| Friends, presence, invites | implemented | `ISteamFriends`, lobby invites, `+connect_lobby` |
+| Sessions, search, arbitration | implemented | `ISteamMatchmaking` lobbies and lobby data |
+| Stats and leaderboards | implemented | `ISteamUserStats` leaderboards, details array for extra columns |
+| Networking (`XNet*`, `XSocket*`, QoS) | implemented, UDP is the exercised path | `ISteamNetworkingMessages` (UDP), `ISteamNetworkingSockets` P2P (TCP), Winsock for title servers |
+| Guide UI (`XShow*`) | implemented | Steam overlay pages, native dialogs for keyboard and message box |
+| Content and marketplace (DLC) | implemented | `ISteamApps` DLC list, store overlay |
+| XLocator server list | implemented for peer hosted | tagged public lobbies |
 | Title servers (XLSP) | config driven | real addresses through Winsock |
 | Voice (`XHVCreateEngine`) | implemented, basic | Steam voice capture/decode, waveOut playback |
 | Protected data, PBuffer, data sections, updates | pass-through | not needed on Steam |
@@ -149,11 +149,15 @@ cmake --build build --config Release
   client: sign-in, notifications, achievements, profile and storage on Cloud, friends, sockets,
   a real lobby, a leaderboard write and read. Put `steam_appid.txt` with your app id
   next to it, or `480` (Spacewar) for testing only. `--spa Game.exe` loads a real title's SPA for the achievement list.
+- `xlive_smoke.exe --probe` reports what a Steam app offers (ownership, achievement schema, Cloud,
+  DLC, relay, leaderboards) without creating anything on it. the probe packer
+  packs it as `bin/xlive-probe-<id>.zip` for another owner of the app to run and send back
+  `probe_report.txt`.
 
 Layout:
 
 ```
-tests/smoke/    the Steam smoke test
+tests/smoke/    the Steam smoke test and probe
 src/xlive/      GFWL public types and prototypes, plus the extension header
 src/core/       Steam lifetime and pump, overlapped bridge, enumerators, notifications,
                 config, SPA reader, network layer, users, cloud, images
