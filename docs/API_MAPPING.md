@@ -14,7 +14,7 @@ Kinds:
 | --- | --- | --- |
 | XLiveInitialize, XLiveInitializeEx | middle | `SteamAPI_InitEx`, SPA load, users, network, sessions. Posts `XN_SYS_SIGNINCHANGED` and `XN_LIVE_CONNECTIONCHANGED` |
 | XLiveUninitialize | middle | leaves lobbies, `SteamAPI_Shutdown` |
-| XLiveRender, XLiveInput, XLivePreTranslateMessage | middle | runs the pump: `SteamAPI_RunCallbacks`, async jobs, network receive |
+| XLiveRender, XLiveInput, XLivePreTranslateMessage | middle | runs the pump: `SteamAPI_RunCallbacks`, async jobs, network receive. Home opens the Steam overlay as the Guide key did (`ui.home_key_opens_overlay`) |
 | XLiveOnCreateDevice, OnDestroyDevice, OnResetDevice | stub | S_OK (the Steam overlay hooks D3D itself) |
 | XLiveRegisterDataSection, XLiveUnregisterDataSection, XLiveUpdateHashes | stub | S_OK |
 | XLiveGetUpdateInformation, XLiveUpdateSystem | stub | S_FALSE, Steam updates before launch |
@@ -94,9 +94,9 @@ Kinds:
 | XSessionStart, XSessionEnd | middle | state in lobby data, `SetLobbyJoinable` per `JOIN_IN_PROGRESS_DISABLED` |
 | XSessionModify | 1:1 | `SetLobbyMemberLimit`, `SetLobbyType`, lobby data |
 | XSessionDelete | 1:1 | `LeaveLobby` |
-| XSessionMigrateHost | middle | new host: `SetLobbyOwner` when possible, rewrites host XNADDR. Client: adopts the info passed in |
+| XSessionMigrateHost | middle | new host: publishes a host claim in its lobby member data and takes the lobby when the owner hands it over (the owner's wrapper does so on seeing the claim). Client: adopts the info passed in |
 | XSessionArbitrationRegister | local | registrants from the member list with machine ids |
-| XSessionSearch, XSessionSearchEx | middle | `RequestLobbyList` with kind/title filters and, from the XLAST query for the procedure index, numeric/string filters on contexts and properties. Results with contexts and properties unpacked |
+| XSessionSearch, XSessionSearchEx | middle | `RequestLobbyList` with kind/title filters plus one filter per XLAST query filter: the attribute's lobby key compared with the parameter, constant or context value the query names (numeric when the value fits an int, text otherwise). Without an XLAST query every context and property passed is an equality filter. Results with contexts and properties unpacked |
 | XSessionSearchByID | middle | `RequestLobbyData` -> one result |
 | XSessionWriteStats, XSessionFlushStats | middle | see stats |
 | XSessionModifySkill | stub | success |
@@ -186,7 +186,7 @@ Kinds:
 | XLocatorServiceInitialize, UnInitialize, CreateKey | local | handle, key with the server flag |
 | XLocatorServerAdvertise | middle | `CreateLobby(Public)` tagged `xl_locator=1` with slots, key and properties in lobby data |
 | XLocatorServerUnAdvertise | 1:1 | `LeaveLobby` |
-| XLocatorCreateServerEnumerator(ByIDs) | middle | `RequestLobbyList` on the tag -> `XLOCATOR_SEARCHRESULT[]` with properties |
+| XLocatorCreateServerEnumerator(ByIDs) | middle | `RequestLobbyList` on the tag -> `XLOCATOR_SEARCHRESULT[]` with properties. Filter groups and sorters are accepted but not applied |
 | XLocatorGetServiceProperty | stub | zeros |
 
 ## Protected data
@@ -212,5 +212,7 @@ Kinds:
 | XlsXuidFromSteamId, XlsSteamIdFromXuid | identity both ways |
 | XlsLobbyIdFromSession, XlsLobbyIdFromXnkid, XlsXnkidFromLobbyId, XlsSessionInfoFromLobby | session <-> lobby |
 | XlsSecureAddrFromSteamId, XlsSteamIdFromSecureAddr, XlsXnaddrFromSteamId | addresses <-> Steam id |
+| XlsPeerConnectionInfo, XlsSocketConnectionInfo | direct or relayed, relay data centre, ping and quality of a peer session or a stream socket |
+| XlsSetP2PTransport | force every peer connection through a Steam relay (also `network.relay_only` in the config) |
 | XlsSetAchievementName, XlsSetLeaderboardName, XlsGetAchievementName, XlsGetLeaderboardName | run-time mapping |
 | XlsPostNotification | inject XN_* notifications |

@@ -61,7 +61,10 @@ packs `bin/xlive-probe-<id>.zip`. Unzip it anywhere on a machine whose Steam acc
 app and run `run_probe.bat`. It reports ownership, the achievement schema, Cloud and its API
 quota, DLC, the relay network and lobbies, creates nothing persistent on the app, and writes
 `probe_report.txt` to send back. Add the game exe as the second argument to list its own SPA
-achievements.
+achievements. `tools/make_pair_kit.ps1` packs `bin/xlive-pair-kit.zip`, a two-PC test under
+Spacewar that proves filtered discovery, UDP and TCP traffic through the GFWL socket API, the
+transport Steam chose (direct or relay, and a forced relay-only run), voice frames and host
+migration in both directions between two real networks.
 
 What the probe tells you:
 
@@ -121,10 +124,16 @@ with the drop-in dll but loads them with `GetProcAddress`.
 - A session whose create flags carry `USES_PRESENCE` is the one invites go to.
 - Session searches return every public lobby of the app that the filters accept. The wrapper
   hides lobbies this client is a member of.
-- Host migration keeps the lobby id (so the XNKID and every registered key stay valid). Steam
-  chooses the new lobby owner. When it is not the member the title elected, the elected host
-  cannot rewrite lobby data, but the title's own migration message still carries the new
-  `XSESSION_INFO`.
+- Host migration keeps the lobby id, so the XNKID and every registered key stay valid. Only the
+  Steam lobby owner can write lobby data, so the member the title elects publishes a host claim
+  in its member data. Whichever wrapper owns the lobby hands it over on seeing the claim, and the
+  new host then publishes its data. Members follow the claim at once. Searchers see the new host
+  once the hand-over is done.
+- Peer connections go direct when both NATs allow it and through Steam's relay network
+  otherwise, no port needs forwarding. `"network": { "relay_only": true }` (or
+  `XlsSetP2PTransport`) forces the relay path, which is useful to test what players behind
+  strict NATs get. `XlsPeerConnectionInfo` and `XlsSocketConnectionInfo` report which path a
+  connection took.
 - Voice works out of the box, played through waveOut with one stream per talker. Titles that
   route XHV output through their own audio graph get the same PCM only if that graph is bypassed.
 - `XStorage*` reads of other players' files fail with file-not-found since Steam Cloud is per
