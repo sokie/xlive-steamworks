@@ -1,0 +1,1278 @@
+// Games for Windows LIVE public types, as a title sees them through xlive.dll.
+// Layouts and values follow the GFWL 3.5 SDK headers (xonline.h, xbox.h, xam.h, xnet.h) and the
+// 32-bit ABI those titles were built against.
+#pragma once
+
+#include <winsock2.h>
+#include <windows.h>
+#include <unknwn.h>
+#include <stdint.h>
+
+#pragma pack(push, 8)
+
+// --- Users ---------------------------------------------------------------------------------------
+
+typedef uint64_t XUID;
+typedef XUID* PXUID;
+
+#define INVALID_XUID                    ((XUID)0)
+#define XUID_LIVE_ENABLED_FLAG          ((XUID)0x0009000000000000)
+#define XUID_OFFLINE_FLAG               ((XUID)0xE000000000000000)
+#define XUID_LIVE_GUEST_BIT             ((XUID)0x0040000000000000)
+
+#define IsGuestXUID(xuid)               (((xuid) & 0x00C0000000000000) > 0)
+#define GetXUIDGuestNumber(xuid)        ((uint8_t)(((xuid) >> (22 + 32)) & 3))
+#define IsOfflineXUID(xuid)             (((xuid) & 0xF000000000000000) == XUID_OFFLINE_FLAG)
+#define IsOnlineXUID(xuid)              (((xuid) & 0xFFFF000000000000) == XUID_LIVE_ENABLED_FLAG)
+#define IsLiveEnabledXUID(xuid)         (((xuid) & 0x000F000000000000) == XUID_LIVE_ENABLED_FLAG)
+#define IsEqualXUID(xuid1, xuid2)       ((xuid1) == (xuid2))
+
+#define XUSER_MAX_COUNT                 4
+#define XUSER_INDEX_FOCUS               0x000000FD
+#define XUSER_INDEX_NONE                0x000000FE
+#define XUSER_INDEX_ANY                 0x000000FF
+
+#define XUSER_NAME_SIZE                 16
+#define XUSER_MAX_NAME_LENGTH           (XUSER_NAME_SIZE - 1)
+
+#define XUSER_GET_SIGNIN_INFO_ONLINE_XUID_ONLY      0x00000001
+#define XUSER_GET_SIGNIN_INFO_OFFLINE_XUID_ONLY     0x00000002
+
+#define XUSER_INFO_FLAG_LIVE_ENABLED    0x00000001
+#define XUSER_INFO_FLAG_GUEST           0x00000002
+
+typedef enum _XUSER_SIGNIN_STATE : uint32_t {
+	eXUserSigninState_NotSignedIn,
+	eXUserSigninState_SignedInLocally,
+	eXUserSigninState_SignedInToLive
+} XUSER_SIGNIN_STATE;
+
+typedef struct _XUSER_SIGNIN_INFO {
+	XUID xuid;
+	DWORD dwInfoFlags;
+	XUSER_SIGNIN_STATE UserSigninState;
+	DWORD dwGuestNumber;
+	DWORD dwSponsorUserIndex;
+	char szUserName[XUSER_NAME_SIZE];
+} XUSER_SIGNIN_INFO, *PXUSER_SIGNIN_INFO;
+
+typedef enum _XPRIVILEGE_TYPE {
+	XPRIVILEGE_MULTIPLAYER_SESSIONS = 254,
+	XPRIVILEGE_COMMUNICATIONS = 252,
+	XPRIVILEGE_COMMUNICATIONS_FRIENDS_ONLY = 251,
+	XPRIVILEGE_PROFILE_VIEWING = 249,
+	XPRIVILEGE_PROFILE_VIEWING_FRIENDS_ONLY = 248,
+	XPRIVILEGE_USER_CREATED_CONTENT = 247,
+	XPRIVILEGE_USER_CREATED_CONTENT_FRIENDS_ONLY = 246,
+	XPRIVILEGE_PURCHASE_CONTENT = 245,
+	XPRIVILEGE_PRESENCE = 244,
+	XPRIVILEGE_PRESENCE_FRIENDS_ONLY = 243,
+	XPRIVILEGE_TRADE_CONTENT = 238,
+	XPRIVILEGE_VIDEO_COMMUNICATIONS = 235,
+	XPRIVILEGE_VIDEO_COMMUNICATIONS_FRIENDS_ONLY = 234,
+	XPRIVILEGE_MULTIPLAYER_DEDICATED_SERVER = 226,
+} XPRIVILEGE_TYPE;
+
+// --- User data, contexts and properties ----------------------------------------------------------
+
+#define XUSER_DATA_TYPE_CONTEXT     ((uint8_t)0)
+#define XUSER_DATA_TYPE_INT32       ((uint8_t)1)
+#define XUSER_DATA_TYPE_INT64       ((uint8_t)2)
+#define XUSER_DATA_TYPE_DOUBLE      ((uint8_t)3)
+#define XUSER_DATA_TYPE_UNICODE     ((uint8_t)4)
+#define XUSER_DATA_TYPE_FLOAT       ((uint8_t)5)
+#define XUSER_DATA_TYPE_BINARY      ((uint8_t)6)
+#define XUSER_DATA_TYPE_DATETIME    ((uint8_t)7)
+#define XUSER_DATA_TYPE_NULL        ((uint8_t)0xFF)
+
+typedef struct _XUSER_DATA {
+	uint8_t type;
+	union {
+		LONG nData;
+		LONGLONG i64Data;
+		double dblData;
+		struct {
+			DWORD cbData; // Includes the null terminator.
+			LPWSTR pwszData;
+		} string;
+		FLOAT fData;
+		struct {
+			DWORD cbData;
+			PBYTE pbData;
+		} binary;
+		FILETIME ftData;
+	};
+} XUSER_DATA, *PXUSER_DATA;
+
+typedef struct _XUSER_PROPERTY {
+	DWORD dwPropertyId;
+	XUSER_DATA value;
+} XUSER_PROPERTY, *PXUSER_PROPERTY;
+
+#pragma pack(push, 1)
+typedef struct _XUSER_CONTEXT {
+	DWORD dwContextId;
+	DWORD dwValue;
+} XUSER_CONTEXT, *PXUSER_CONTEXT;
+#pragma pack(pop)
+
+#define X_PROPERTY_TYPE_MASK            0xF0000000
+#define X_PROPERTY_SCOPE_MASK           0x00008000
+#define X_PROPERTY_ID_MASK              0x00007FFF
+
+#define XPROPERTYID(global, type, id)   (((global) ? X_PROPERTY_SCOPE_MASK : 0) | (((type) << 28) & X_PROPERTY_TYPE_MASK) | ((id) & X_PROPERTY_ID_MASK))
+#define XCONTEXTID(global, id)          XPROPERTYID(global, XUSER_DATA_TYPE_CONTEXT, id)
+#define XPROPERTYTYPEFROMID(id)         (((id) >> 28) & 0xf)
+#define XISSYSTEMPROPERTY(id)           ((id) & X_PROPERTY_SCOPE_MASK)
+
+#define X_CONTEXT_PRESENCE              XCONTEXTID(1, 0x1)
+#define X_CONTEXT_GAME_TYPE             XCONTEXTID(1, 0xA)
+#define X_CONTEXT_GAME_MODE             XCONTEXTID(1, 0xB)
+#define X_CONTEXT_SESSION_JOINABLE      XCONTEXTID(1, 0xC)
+
+#define X_CONTEXT_GAME_TYPE_RANKED      0
+#define X_CONTEXT_GAME_TYPE_STANDARD    1
+
+#define X_PROPERTY_RANK                 XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0x1)
+#define X_PROPERTY_GAMERNAME            XPROPERTYID(1, XUSER_DATA_TYPE_UNICODE, 0x2)
+#define X_PROPERTY_SESSION_ID           XPROPERTYID(1, XUSER_DATA_TYPE_INT64,   0x3)
+#define X_PROPERTY_RELATIVE_SCORE       XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0xA)
+#define X_PROPERTY_SESSION_TEAM         XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0xB)
+#define X_PROPERTY_GAMER_ZONE           XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0x101)
+#define X_PROPERTY_GAMER_COUNTRY        XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0x102)
+#define X_PROPERTY_GAMER_LANGUAGE       XPROPERTYID(1, XUSER_DATA_TYPE_INT32,   0x103)
+#define X_PROPERTY_GAMER_RATING         XPROPERTYID(1, XUSER_DATA_TYPE_FLOAT,   0x104)
+#define X_PROPERTY_GAMER_MU             XPROPERTYID(1, XUSER_DATA_TYPE_DOUBLE,  0x105)
+#define X_PROPERTY_GAMER_SIGMA          XPROPERTYID(1, XUSER_DATA_TYPE_DOUBLE,  0x106)
+#define X_PROPERTY_GAMER_PUID           XPROPERTYID(1, XUSER_DATA_TYPE_INT64,   0x107)
+#define X_PROPERTY_AFFILIATE_SCORE      XPROPERTYID(1, XUSER_DATA_TYPE_INT64,   0x108)
+#define X_PROPERTY_GAMER_HOSTNAME       XPROPERTYID(1, XUSER_DATA_TYPE_UNICODE, 0x109)
+
+// --- Profile settings ----------------------------------------------------------------------------
+
+#define XPROFILE_SETTING_MAX_SIZE               1000
+#define XPROFILE_SETTING_MAX_PICTURE_KEY_PATH   100
+#define XPROFILE_SETTING_MAX_GAMERCARD_MOTTO    (22 * sizeof(wchar_t))
+
+#define XPROFILEID(type, size, id)              ((((type) & 0xf) << 28) | (((size) & 0xfff) << 16) | ((id) & 0x3fff))
+#define XUserGetProfileSettingMaxSize(id)       (((id) & 0x0fff0000) >> 16)
+#define XUserGetProfileSettingType(id)          ((uint8_t)(((id) & 0xf0000000) >> 28))
+#define XUserGetProfileSettingIndex(id)         ((id) & 0x3fff)
+
+#define XPROFILE_OPTION_CONTROLLER_VIBRATION         XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 3)
+#define XPROFILE_TITLE_SPECIFIC1                     XPROFILEID(XUSER_DATA_TYPE_BINARY,  XPROFILE_SETTING_MAX_SIZE, 0x3FFF)
+#define XPROFILE_TITLE_SPECIFIC2                     XPROFILEID(XUSER_DATA_TYPE_BINARY,  XPROFILE_SETTING_MAX_SIZE, 0x3FFE)
+#define XPROFILE_TITLE_SPECIFIC3                     XPROFILEID(XUSER_DATA_TYPE_BINARY,  XPROFILE_SETTING_MAX_SIZE, 0x3FFD)
+#define XPROFILE_GAMER_YAXIS_INVERSION               XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 2)
+#define XPROFILE_GAMERCARD_ZONE                      XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 4)
+#define XPROFILE_GAMERCARD_REGION                    XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 5)
+#define XPROFILE_GAMERCARD_CRED                      XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 6)
+#define XPROFILE_GAMERCARD_REP                       XPROFILEID(XUSER_DATA_TYPE_FLOAT,   sizeof(DWORD), 11)
+#define XPROFILE_OPTION_VOICE_MUTED                  XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 12)
+#define XPROFILE_OPTION_VOICE_THRU_SPEAKERS          XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 13)
+#define XPROFILE_OPTION_VOICE_VOLUME                 XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 14)
+#define XPROFILE_GAMERCARD_PICTURE_KEY               XPROFILEID(XUSER_DATA_TYPE_UNICODE, XPROFILE_SETTING_MAX_PICTURE_KEY_PATH, 15)
+#define XPROFILE_GAMERCARD_MOTTO                     XPROFILEID(XUSER_DATA_TYPE_UNICODE, XPROFILE_SETTING_MAX_GAMERCARD_MOTTO, 17)
+#define XPROFILE_GAMERCARD_TITLES_PLAYED             XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 18)
+#define XPROFILE_GAMERCARD_ACHIEVEMENTS_EARNED       XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 19)
+#define XPROFILE_GAMER_DIFFICULTY                    XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 21)
+#define XPROFILE_GAMER_CONTROL_SENSITIVITY           XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 24)
+#define XPROFILE_GAMER_PREFERRED_COLOR_FIRST         XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 29)
+#define XPROFILE_GAMER_PREFERRED_COLOR_SECOND        XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 30)
+#define XPROFILE_GAMER_ACTION_AUTO_AIM               XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 34)
+#define XPROFILE_GAMER_ACTION_AUTO_CENTER            XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 35)
+#define XPROFILE_GAMER_ACTION_MOVEMENT_CONTROL       XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 36)
+#define XPROFILE_GAMER_RACE_TRANSMISSION             XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 38)
+#define XPROFILE_GAMER_RACE_CAMERA_LOCATION          XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 39)
+#define XPROFILE_GAMER_RACE_BRAKE_CONTROL            XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 40)
+#define XPROFILE_GAMER_RACE_ACCELERATOR_CONTROL      XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 41)
+#define XPROFILE_GAMERCARD_TITLE_CRED_EARNED         XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 56)
+#define XPROFILE_GAMERCARD_TITLE_ACHIEVEMENTS_EARNED XPROFILEID(XUSER_DATA_TYPE_INT32,   sizeof(DWORD), 57)
+
+typedef enum {
+	XSOURCE_NO_VALUE = 0,
+	XSOURCE_DEFAULT,
+	XSOURCE_TITLE,
+	XSOURCE_PERMISSION_DENIED
+} XUSER_PROFILE_SOURCE;
+
+typedef struct _XUSER_PROFILE_SETTING {
+	XUSER_PROFILE_SOURCE source;
+	union {
+		DWORD dwUserIndex;
+		XUID xuid;
+	} user;
+	DWORD dwSettingId;
+	XUSER_DATA data;
+} XUSER_PROFILE_SETTING, *PXUSER_PROFILE_SETTING;
+
+typedef struct _XUSER_READ_PROFILE_SETTING_RESULT {
+	DWORD dwSettingsLen;
+	XUSER_PROFILE_SETTING* pSettings;
+} XUSER_READ_PROFILE_SETTING_RESULT, *PXUSER_READ_PROFILE_SETTING_RESULT;
+
+#define XPROFILE_GAMERCARD_ZONE_RR 1
+
+// --- Overlapped ----------------------------------------------------------------------------------
+
+struct _XOVERLAPPED;
+
+typedef void (WINAPI* PXOVERLAPPED_COMPLETION_ROUTINE)(DWORD dwErrorCode, DWORD dwNumberOfBytesTransfered, struct _XOVERLAPPED* pOverlapped);
+
+typedef struct _XOVERLAPPED {
+	ULONG_PTR InternalLow;      // Result code, ERROR_IO_PENDING while in flight.
+	ULONG_PTR InternalHigh;     // Secondary result, usually a byte or item count.
+	ULONG_PTR InternalContext;  // Reserved for xlive.
+	HANDLE hEvent;
+	PXOVERLAPPED_COMPLETION_ROUTINE pCompletionRoutine;
+	DWORD_PTR dwCompletionContext;
+	DWORD dwExtendedError;
+} XOVERLAPPED, *PXOVERLAPPED;
+
+#define XHasOverlappedIoCompleted(lpOverlapped) (*((volatile ULONG_PTR*)(&(lpOverlapped)->InternalLow)) != ERROR_IO_PENDING)
+
+// --- Notifications -------------------------------------------------------------------------------
+
+#define XNID(Version, Area, Index)      (DWORD)((uint16_t)(Area) << 25 | (uint16_t)(Version) << 16 | (uint16_t)(Index))
+#define XNID_VERSION(msgid)             (((msgid) >> 16) & 0x1FF)
+#define XNID_AREA(msgid)                (((msgid) >> 25) & 0x3F)
+#define XNID_INDEX(msgid)               ((msgid) & 0xFFFF)
+
+#define XNOTIFY_SYSTEM                  (0x00000001)
+#define XNOTIFY_LIVE                    (0x00000002)
+#define XNOTIFY_FRIENDS                 (0x00000004)
+#define XNOTIFY_CUSTOM                  (0x00000008)
+#define XNOTIFY_XMP                     (0x00000020)
+#define XNOTIFY_MSGR                    (0x00000040)
+#define XNOTIFY_PARTY                   (0x00000080)
+#define XNOTIFY_ALL                     (XNOTIFY_SYSTEM | XNOTIFY_LIVE | XNOTIFY_FRIENDS | XNOTIFY_CUSTOM | XNOTIFY_XMP | XNOTIFY_MSGR | XNOTIFY_PARTY)
+
+#define _XNAREA_SYSTEM                  (0)
+#define _XNAREA_LIVE                    (1)
+#define _XNAREA_FRIENDS                 (2)
+#define _XNAREA_CUSTOM                  (3)
+#define _XNAREA_XMP                     (5)
+#define _XNAREA_MSGR                    (6)
+#define _XNAREA_PARTY                   (7)
+
+#define XN_SYS_UI                       XNID(0, _XNAREA_SYSTEM, 0x0009)
+#define XN_SYS_SIGNINCHANGED            XNID(0, _XNAREA_SYSTEM, 0x000a)
+#define XN_SYS_STORAGEDEVICESCHANGED    XNID(0, _XNAREA_SYSTEM, 0x000b)
+#define XN_SYS_PROFILESETTINGCHANGED    XNID(0, _XNAREA_SYSTEM, 0x000e)
+#define XN_SYS_MUTELISTCHANGED          XNID(0, _XNAREA_SYSTEM, 0x0011)
+#define XN_SYS_INPUTDEVICESCHANGED      XNID(0, _XNAREA_SYSTEM, 0x0012)
+#define XN_SYS_XLIVETITLEUPDATE         XNID(0, _XNAREA_SYSTEM, 0x0015)
+#define XN_SYS_XLIVESYSTEMUPDATE        XNID(0, _XNAREA_SYSTEM, 0x0016)
+#define XN_SYS_INPUTDEVICECONFIGCHANGED XNID(1, _XNAREA_SYSTEM, 0x0013)
+
+#define XN_LIVE_CONNECTIONCHANGED       XNID(0, _XNAREA_LIVE, 0x0001)
+#define XN_LIVE_INVITE_ACCEPTED         XNID(0, _XNAREA_LIVE, 0x0002)
+#define XN_LIVE_LINK_STATE_CHANGED      XNID(0, _XNAREA_LIVE, 0x0003)
+#define XN_LIVE_CONTENT_INSTALLED       XNID(0, _XNAREA_LIVE, 0x0007)
+#define XN_LIVE_MEMBERSHIP_PURCHASED    XNID(0, _XNAREA_LIVE, 0x0008)
+#define XN_LIVE_VOICECHAT_AWAY          XNID(0, _XNAREA_LIVE, 0x0009)
+#define XN_LIVE_PRESENCE_CHANGED        XNID(0, _XNAREA_LIVE, 0x000A)
+
+#define XN_FRIENDS_PRESENCE_CHANGED     XNID(0, _XNAREA_FRIENDS, 0x0001)
+#define XN_FRIENDS_FRIEND_ADDED         XNID(0, _XNAREA_FRIENDS, 0x0002)
+#define XN_FRIENDS_FRIEND_REMOVED       XNID(0, _XNAREA_FRIENDS, 0x0003)
+
+#define XN_CUSTOM_ACTIONPRESSED         XNID(0, _XNAREA_CUSTOM, 0x0003)
+#define XN_CUSTOM_GAMERCARD             XNID(1, _XNAREA_CUSTOM, 0x0004)
+
+#define XNOTIFYUI_POS_CENTER            0
+#define XNOTIFYUI_POS_TOPCENTER         0x1
+#define XNOTIFYUI_POS_BOTTOMCENTER      0x2
+#define XNOTIFYUI_POS_CENTERLEFT        0x4
+#define XNOTIFYUI_POS_CENTERRIGHT       0x8
+#define XNOTIFYUI_POS_TOPLEFT           (XNOTIFYUI_POS_TOPCENTER | XNOTIFYUI_POS_CENTERLEFT)
+#define XNOTIFYUI_POS_TOPRIGHT          (XNOTIFYUI_POS_TOPCENTER | XNOTIFYUI_POS_CENTERRIGHT)
+#define XNOTIFYUI_POS_BOTTOMLEFT        (XNOTIFYUI_POS_BOTTOMCENTER | XNOTIFYUI_POS_CENTERLEFT)
+#define XNOTIFYUI_POS_BOTTOMRIGHT       (XNOTIFYUI_POS_BOTTOMCENTER | XNOTIFYUI_POS_CENTERRIGHT)
+#define XNOTIFYUI_POS_MASK              0xF
+
+// --- XOnline result codes ------------------------------------------------------------------------
+
+#define XONLINE_E_OVERFLOW                              ((HRESULT)0x80150001L)
+#define XONLINE_E_NO_SESSION                            ((HRESULT)0x80150002L)
+#define XONLINE_E_USER_NOT_LOGGED_ON                    ((HRESULT)0x80150003L)
+#define XONLINE_E_NOT_INITIALIZED                       ((HRESULT)0x80150005L)
+#define XONLINE_E_NO_USER                               ((HRESULT)0x80150006L)
+#define XONLINE_E_INTERNAL_ERROR                        ((HRESULT)0x80150007L)
+#define XONLINE_E_OUT_OF_MEMORY                         ((HRESULT)0x80150008L)
+#define XONLINE_E_TASK_BUSY                             ((HRESULT)0x80150009L)
+#define XONLINE_E_SERVER_ERROR                          ((HRESULT)0x8015000AL)
+#define XONLINE_E_IO_ERROR                              ((HRESULT)0x8015000BL)
+#define XONLINE_E_INVALID_REQUEST                       ((HRESULT)0x80150010L)
+#define XONLINE_E_ACCESS_DENIED                         ((HRESULT)0x80150016L)
+
+#define XONLINE_S_LOGON_CONNECTION_ESTABLISHED          ((HRESULT)0x001510F0L)
+#define XONLINE_S_LOGON_DISCONNECTED                    ((HRESULT)0x001510F1L)
+#define XONLINE_E_LOGON_NO_NETWORK_CONNECTION           ((HRESULT)0x80151000L)
+#define XONLINE_E_LOGON_CANNOT_ACCESS_SERVICE           ((HRESULT)0x80151001L)
+#define XONLINE_E_LOGON_CONNECTION_LOST                 ((HRESULT)0x80151004L)
+#define XONLINE_E_LOGON_KICKED_BY_DUPLICATE_LOGON       ((HRESULT)0x80151005L)
+#define XONLINE_E_LOGON_SERVICE_NOT_REQUESTED           ((HRESULT)0x80151100L)
+#define XONLINE_E_LOGON_NOT_LOGGED_ON                   ((HRESULT)0x80151802L)
+
+#define XONLINE_E_MATCH_INVALID_SESSION_ID              ((HRESULT)0x80155100L)
+#define XONLINE_E_SESSION_NOT_FOUND                     ((HRESULT)0x80155200L)
+#define XONLINE_E_SESSION_INSUFFICIENT_PRIVILEGES       ((HRESULT)0x80155201L)
+#define XONLINE_E_SESSION_FULL                          ((HRESULT)0x80155202L)
+#define XONLINE_E_SESSION_INVITES_DISABLED              ((HRESULT)0x80155203L)
+#define XONLINE_E_SESSION_INVALID_FLAGS                 ((HRESULT)0x80155204L)
+#define XONLINE_E_SESSION_REQUIRES_ARBITRATION          ((HRESULT)0x80155205L)
+#define XONLINE_E_SESSION_WRONG_STATE                   ((HRESULT)0x80155206L)
+#define XONLINE_E_SESSION_INSUFFICIENT_BUFFER           ((HRESULT)0x80155207L)
+#define XONLINE_E_SESSION_REGISTRATION_ERROR            ((HRESULT)0x80155208L)
+#define XONLINE_E_SESSION_NOT_LOGGED_ON                 ((HRESULT)0x80155209L)
+#define XONLINE_E_SESSION_JOIN_ILLEGAL                  ((HRESULT)0x8015520AL)
+#define XONLINE_E_SESSION_CREATE_KEY_FAILED             ((HRESULT)0x8015520BL)
+#define XONLINE_E_SESSION_NOT_REGISTERED                ((HRESULT)0x8015520CL)
+#define XONLINE_E_SESSION_REGISTER_KEY_FAILED           ((HRESULT)0x8015520DL)
+
+#define XONLINE_E_STAT_INVALID_TITLE_OR_LEADERBOARD     ((HRESULT)0x80159002L)
+#define XONLINE_E_STAT_USER_NOT_FOUND                   ((HRESULT)0x80159003L)
+#define XONLINE_E_STAT_TOO_MANY_SPECS                   ((HRESULT)0x80159004L)
+#define XONLINE_E_STAT_PERMISSION_DENIED                ((HRESULT)0x80159200L)
+
+#define XONLINE_E_STORAGE_INVALID_REQUEST               ((HRESULT)0x8015c001L)
+#define XONLINE_E_STORAGE_ACCESS_DENIED                 ((HRESULT)0x8015c002L)
+#define XONLINE_E_STORAGE_FILE_IS_TOO_BIG               ((HRESULT)0x8015c003L)
+#define XONLINE_E_STORAGE_FILE_NOT_FOUND                ((HRESULT)0x8015c004L)
+#define XONLINE_E_STORAGE_CANNOT_FIND_PATH              ((HRESULT)0x8015c006L)
+#define XONLINE_E_STORAGE_INVALID_STORAGE_PATH          ((HRESULT)0x8015c008L)
+#define XONLINE_E_STORAGE_INVALID_FACILITY              ((HRESULT)0x8015c009L)
+#define XONLINE_E_STORAGE_QUOTA_EXCEEDED                ((HRESULT)0x8015c00DL)
+#define XONLINE_E_STORAGE_FILE_ALREADY_EXISTS           ((HRESULT)0x8015c011L)
+
+#define XONLINE_E_STRING_TOO_LONG                       ((HRESULT)0x80157101L)
+#define XONLINE_E_STRING_OFFENSIVE_TEXT                 ((HRESULT)0x80157102L)
+
+// --- XNet ----------------------------------------------------------------------------------------
+
+#define XNET_STARTUP_BYPASS_SECURITY                0x01
+#define XNET_STARTUP_ALLOCATE_MAX_DGRAM_SOCKETS     0x02
+#define XNET_STARTUP_ALLOCATE_MAX_STREAM_SOCKETS    0x04
+#define XNET_STARTUP_DISABLE_PEER_ENCRYPTION        0x08
+
+#define IPPROTO_VDP 254
+
+typedef struct {
+	uint8_t cfgSizeOfStruct;
+	uint8_t cfgFlags;
+	uint8_t cfgSockMaxDgramSockets;
+	uint8_t cfgSockMaxStreamSockets;
+	uint8_t cfgSockDefaultRecvBufsizeInK;
+	uint8_t cfgSockDefaultSendBufsizeInK;
+	uint8_t cfgKeyRegMax;
+	uint8_t cfgSecRegMax;
+	uint8_t cfgQosDataLimitDiv4;
+	uint8_t cfgQosProbeTimeoutInSeconds;
+	uint8_t cfgQosProbeRetries;
+	uint8_t cfgQosSrvMaxSimultaneousResponses;
+	uint8_t cfgQosPairWaitTimeInSeconds;
+} XNetStartupParams;
+
+typedef struct {
+	IN_ADDR ina;          // Local IP.
+	IN_ADDR inaOnline;    // Online (secure) IP.
+	uint16_t wPortOnline;
+	uint8_t abEnet[6];    // MAC address.
+	uint8_t abOnline[20]; // Online identification blob.
+} XNADDR;
+
+typedef XNADDR TSADDR;
+
+typedef struct {
+	uint8_t ab[8];
+} XNKID;
+
+typedef struct {
+	uint8_t ab[16];
+} XNKEY;
+
+#define XNET_XNKID_MASK                 0xF0
+#define XNET_XNKID_SYSTEM_LINK          0x00
+#define XNET_XNKID_SYSTEM_LINK_XPLAT    0x40
+#define XNET_XNKID_ONLINE_PEER          0x80
+#define XNET_XNKID_ONLINE_SERVER        0xC0
+#define XNET_XNKID_ONLINE_TITLESERVER   0xE0
+#define XNetXnKidIsSystemLink(xnkid)    ((((xnkid)->ab[0] & 0xE0) == XNET_XNKID_SYSTEM_LINK) || (((xnkid)->ab[0] & 0xE0) == XNET_XNKID_SYSTEM_LINK_XPLAT))
+#define XNetXnKidIsOnlinePeer(xnkid)    (((xnkid)->ab[0] & 0xE0) == XNET_XNKID_ONLINE_PEER)
+
+typedef struct {
+	INT iStatus;
+	UINT cina;
+	IN_ADDR aina[8];
+} XNDNS;
+
+typedef struct {
+	uint8_t bFlags;
+	uint8_t bReserved;
+	uint16_t cProbesXmit;
+	uint16_t cProbesRecv;
+	uint16_t cbData;
+	uint8_t* pbData;
+	uint16_t wRttMinInMsecs;
+	uint16_t wRttMedInMsecs;
+	DWORD dwUpBitsPerSec;
+	DWORD dwDnBitsPerSec;
+} XNQOSINFO;
+
+typedef struct {
+	UINT cxnqos;
+	UINT cxnqosPending;
+	XNQOSINFO axnqosinfo[1];
+} XNQOS;
+
+typedef struct {
+	DWORD dwSizeOfStruct;
+	DWORD dwNumDataRequestsReceived;
+	DWORD dwNumProbesReceived;
+	DWORD dwNumSlotsFullDiscards;
+	DWORD dwNumDataRepliesSent;
+	DWORD dwNumDataReplyBytesSent;
+	DWORD dwNumProbeRepliesSent;
+} XNQOSLISTENSTATS;
+
+#define XNET_XNQOSINFO_COMPLETE         0x01
+#define XNET_XNQOSINFO_TARGET_CONTACTED 0x02
+#define XNET_XNQOSINFO_TARGET_DISABLED  0x04
+#define XNET_XNQOSINFO_DATA_RECEIVED    0x08
+#define XNET_XNQOSINFO_PARTIAL_COMPLETE 0x10
+
+#define XNET_QOS_LISTEN_ENABLE          0x00000001
+#define XNET_QOS_LISTEN_DISABLE         0x00000002
+#define XNET_QOS_LISTEN_SET_DATA        0x00000004
+#define XNET_QOS_LISTEN_SET_BITSPERSEC  0x00000008
+#define XNET_QOS_LISTEN_RELEASE         0x00000010
+
+#define XNET_XNADDR_PLATFORM_XBOX1      0x00000000
+#define XNET_XNADDR_PLATFORM_XBOX360    0x00000001
+#define XNET_XNADDR_PLATFORM_WINPC      0x00000002
+
+#define XNET_CONNECT_STATUS_IDLE        0x00000000
+#define XNET_CONNECT_STATUS_PENDING     0x00000001
+#define XNET_CONNECT_STATUS_CONNECTED   0x00000002
+#define XNET_CONNECT_STATUS_LOST        0x00000003
+
+#define XNET_GET_XNADDR_PENDING         0x00000000
+#define XNET_GET_XNADDR_NONE            0x00000001
+#define XNET_GET_XNADDR_ETHERNET        0x00000002
+#define XNET_GET_XNADDR_STATIC          0x00000004
+#define XNET_GET_XNADDR_DHCP            0x00000008
+#define XNET_GET_XNADDR_PPPOE           0x00000010
+#define XNET_GET_XNADDR_GATEWAY         0x00000020
+#define XNET_GET_XNADDR_DNS             0x00000040
+#define XNET_GET_XNADDR_ONLINE          0x00000080
+#define XNET_GET_XNADDR_TROUBLESHOOT    0x00008000
+
+#define XNET_ETHERNET_LINK_INACTIVE     0x00000000
+#define XNET_ETHERNET_LINK_ACTIVE       0x00000001
+#define XNET_ETHERNET_LINK_100MBPS      0x00000002
+#define XNET_ETHERNET_LINK_10MBPS       0x00000004
+#define XNET_ETHERNET_LINK_FULL_DUPLEX  0x00000008
+#define XNET_ETHERNET_LINK_HALF_DUPLEX  0x00000010
+#define XNET_ETHERNET_LINK_WIRELESS     0x00000020
+
+#define XNET_OPTID_STARTUP_PARAMS       1
+#define XNET_OPTID_NIC_XMIT_BYTES       2
+#define XNET_OPTID_NIC_XMIT_FRAMES      3
+#define XNET_OPTID_NIC_RECV_BYTES       4
+#define XNET_OPTID_NIC_RECV_FRAMES      5
+#define XNET_OPTID_CALLER_XMIT_BYTES    6
+#define XNET_OPTID_CALLER_XMIT_FRAMES   7
+#define XNET_OPTID_CALLER_RECV_BYTES    8
+#define XNET_OPTID_CALLER_RECV_FRAMES   9
+
+typedef enum : uint32_t {
+	XONLINE_NAT_OPEN = 1,
+	XONLINE_NAT_MODERATE,
+	XONLINE_NAT_STRICT
+} XONLINE_NAT_TYPE;
+
+#pragma pack(push, 4)
+typedef struct _XONLINE_SERVICE_INFO {
+	DWORD dwServiceID;
+	IN_ADDR serviceIP;
+	uint16_t wServicePort;
+	uint16_t wReserved;
+} XONLINE_SERVICE_INFO, *PXONLINE_SERVICE_INFO;
+#pragma pack(pop)
+
+#define XTITLE_SERVER_MAX_SERVER_INFO_LEN   199
+#define XTITLE_SERVER_MAX_SERVER_INFO_SIZE  200
+
+typedef struct _XTITLE_SERVER_INFO {
+	IN_ADDR inaServer;
+	DWORD dwFlags;
+	char szServerInfo[XTITLE_SERVER_MAX_SERVER_INFO_SIZE];
+} XTITLE_SERVER_INFO, *PXTITLE_SERVER_INFO;
+
+// --- Friends and presence ------------------------------------------------------------------------
+
+#define XONLINE_FRIENDSTATE_FLAG_NONE                   0x00000000
+#define XONLINE_FRIENDSTATE_FLAG_ONLINE                 0x00000001
+#define XONLINE_FRIENDSTATE_FLAG_PLAYING                0x00000002
+#define XONLINE_FRIENDSTATE_FLAG_CLOAKED                0x00000004
+#define XONLINE_FRIENDSTATE_FLAG_VOICE                  0x00000008
+#define XONLINE_FRIENDSTATE_FLAG_JOINABLE               0x00000010
+#define XONLINE_FRIENDSTATE_MASK_GUESTS                 0x00000060
+#define XONLINE_FRIENDSTATE_FLAG_JOINABLE_FRIENDS_ONLY  0x00000100
+#define XONLINE_FRIENDSTATE_FLAG_SENTINVITE             0x04000000
+#define XONLINE_FRIENDSTATE_FLAG_RECEIVEDINVITE         0x08000000
+#define XONLINE_FRIENDSTATE_FLAG_INVITEACCEPTED         0x10000000
+#define XONLINE_FRIENDSTATE_FLAG_INVITEREJECTED         0x20000000
+#define XONLINE_FRIENDSTATE_FLAG_SENTREQUEST            0x40000000
+#define XONLINE_FRIENDSTATE_FLAG_RECEIVEDREQUEST        0x80000000
+
+#define XONLINE_FRIENDSTATE_ENUM_ONLINE            0x00000000
+#define XONLINE_FRIENDSTATE_ENUM_AWAY              0x00010000
+#define XONLINE_FRIENDSTATE_ENUM_BUSY              0x00020000
+#define XONLINE_FRIENDSTATE_MASK_USER_STATE        0x000F0000
+#define XONLINE_FRIENDSTATE_ENUM_CONSOLE_XBOX1     0x00000000
+#define XONLINE_FRIENDSTATE_ENUM_CONSOLE_XBOX360   0x00001000
+#define XONLINE_FRIENDSTATE_ENUM_CONSOLE_WINPC     0x00002000
+#define XONLINE_FRIENDSTATE_MASK_CONSOLE_TYPE      0x00007000
+
+#define MAX_RICHPRESENCE_SIZE   64
+#define MAX_FRIENDS             100
+#define XFRIENDS_MAX_C_RESULT   100
+#define MAX_PRESENCE            100
+#define XPRESENCE_MAX_TITLE_SUBS 400
+
+#pragma pack(push, 1)
+typedef struct _XONLINE_FRIEND {
+	XUID xuid;
+	char szGamertag[XUSER_NAME_SIZE];
+	DWORD dwFriendState;
+	XNKID sessionID;
+	DWORD dwTitleID;
+	FILETIME ftUserTime;
+	XNKID xnkidInvite;
+	FILETIME gameinviteTime;
+	DWORD cchRichPresence;
+	wchar_t wszRichPresence[MAX_RICHPRESENCE_SIZE];
+} XONLINE_FRIEND, *PXONLINE_FRIEND;
+
+typedef struct _XONLINE_PRESENCE {
+	XUID xuid;
+	DWORD dwState;
+	XNKID sessionID;
+	DWORD dwTitleID;
+	FILETIME ftUserTime;
+	DWORD cchRichPresence;
+	wchar_t wszRichPresence[MAX_RICHPRESENCE_SIZE];
+} XONLINE_PRESENCE, *PXONLINE_PRESENCE;
+#pragma pack(pop)
+
+typedef struct _FIND_USER_INFO {
+	XUID qwUserId;
+	char szGamerTag[XUSER_NAME_SIZE];
+} FIND_USER_INFO;
+
+typedef struct _FIND_USERS_RESPONSE {
+	DWORD dwResults;
+	FIND_USER_INFO* pUsers;
+} FIND_USERS_RESPONSE;
+
+// --- Sessions ------------------------------------------------------------------------------------
+
+#define XSESSION_CREATE_USES_MASK                       0x0000003F
+#define XSESSION_CREATE_HOST                            0x00000001
+#define XSESSION_CREATE_USES_PRESENCE                   0x00000002
+#define XSESSION_CREATE_USES_STATS                      0x00000004
+#define XSESSION_CREATE_USES_MATCHMAKING                0x00000008
+#define XSESSION_CREATE_USES_ARBITRATION                0x00000010
+#define XSESSION_CREATE_USES_PEER_NETWORK               0x00000020
+#define XSESSION_CREATE_MODIFIERS_MASK                  0x00000F80
+#define XSESSION_CREATE_SOCIAL_MATCHMAKING_ALLOWED      0x00000080
+#define XSESSION_CREATE_INVITES_DISABLED                0x00000100
+#define XSESSION_CREATE_JOIN_VIA_PRESENCE_DISABLED      0x00000200
+#define XSESSION_CREATE_JOIN_IN_PROGRESS_DISABLED       0x00000400
+#define XSESSION_CREATE_JOIN_VIA_PRESENCE_FRIENDS_ONLY  0x00000800
+
+#define XSESSION_SEARCH_MAX_PARAMS      30
+#define XSESSION_SEARCH_MAX_RETURNS     50
+
+#define XSESSION_MEMBER_FLAGS_PRIVATE_SLOT  0x00000001
+#define XSESSION_MEMBER_FLAGS_ZOMBIE        0x00000002
+
+typedef enum _XSESSION_STATE {
+	XSESSION_STATE_LOBBY = 0,
+	XSESSION_STATE_REGISTRATION,
+	XSESSION_STATE_INGAME,
+	XSESSION_STATE_REPORTING,
+	XSESSION_STATE_DELETED
+} XSESSION_STATE;
+
+typedef struct _XSESSION_INFO {
+	XNKID sessionID;
+	XNADDR hostAddress;
+	XNKEY keyExchangeKey;
+} XSESSION_INFO, *PXSESSION_INFO;
+
+typedef struct _XSESSION_SEARCHRESULT {
+	XSESSION_INFO info;
+	DWORD dwOpenPublicSlots;
+	DWORD dwOpenPrivateSlots;
+	DWORD dwFilledPublicSlots;
+	DWORD dwFilledPrivateSlots;
+	DWORD cProperties;
+	DWORD cContexts;
+	PXUSER_PROPERTY pProperties;
+	PXUSER_CONTEXT pContexts;
+} XSESSION_SEARCHRESULT, *PXSESSION_SEARCHRESULT;
+
+typedef struct _XSESSION_SEARCHRESULT_HEADER {
+	DWORD dwSearchResults;
+	XSESSION_SEARCHRESULT* pResults;
+} XSESSION_SEARCHRESULT_HEADER, *PXSESSION_SEARCHRESULT_HEADER;
+
+typedef struct _XSESSION_REGISTRANT {
+	uint64_t qwMachineID;
+	DWORD bTrustworthiness;
+	DWORD bNumUsers;
+	XUID* rgUsers;
+} XSESSION_REGISTRANT;
+
+typedef struct _XSESSION_REGISTRATION_RESULTS {
+	DWORD wNumRegistrants;
+	XSESSION_REGISTRANT* rgRegistrants;
+} XSESSION_REGISTRATION_RESULTS, *PXSESSION_REGISTRATION_RESULTS;
+
+typedef struct _XSESSION_VIEW_PROPERTIES {
+	DWORD dwViewId;
+	DWORD dwNumProperties;
+	XUSER_PROPERTY* pProperties;
+} XSESSION_VIEW_PROPERTIES;
+
+typedef struct _XSESSION_MEMBER {
+	XUID xuidOnline;
+	DWORD dwUserIndex;
+	DWORD dwFlags;
+} XSESSION_MEMBER;
+
+typedef struct _XSESSION_LOCAL_DETAILS {
+	DWORD dwUserIndexHost;
+	DWORD dwGameType;
+	DWORD dwGameMode;
+	DWORD dwFlags;
+	DWORD dwMaxPublicSlots;
+	DWORD dwMaxPrivateSlots;
+	DWORD dwAvailablePublicSlots;
+	DWORD dwAvailablePrivateSlots;
+	DWORD dwActualMemberCount;
+	DWORD dwReturnedMemberCount;
+	XSESSION_STATE eState;
+	uint64_t qwNonce;
+	XSESSION_INFO sessionInfo;
+	XNKID xnkidArbitration;
+	XSESSION_MEMBER* pSessionMembers;
+} XSESSION_LOCAL_DETAILS, *PXSESSION_LOCAL_DETAILS;
+
+typedef struct _XINVITE_INFO {
+	XUID xuidInvitee;
+	XUID xuidInviter;
+	DWORD dwTitleID;
+	XSESSION_INFO hostInfo;
+	BOOL fFromGameInvite;
+} XINVITE_INFO, *PXINVITE_INFO;
+
+// --- Stats ---------------------------------------------------------------------------------------
+
+#define X_STATS_VIEW_SKILL                      0xFFFF0000
+#define X_STATS_COLUMN_SKILL_SKILL              61
+#define X_STATS_COLUMN_SKILL_GAMESPLAYED        62
+#define X_STATS_COLUMN_SKILL_MU                 63
+#define X_STATS_COLUMN_SKILL_SIGMA              64
+#define X_STATS_SKILL_SKILL_DEFAULT             1
+#define X_STATS_SKILL_MU_DEFAULT                3.0
+#define X_STATS_SKILL_SIGMA_DEFAULT             1.0
+#define X_STATS_MAX_VIEWS                       64
+#define X_STATS_MAX_PROPERTIES_IN_VIEW          64
+#define X_STATS_MAX_USER_COUNT                  101
+#define X_STATS_MAX_ROW_COUNT                   100
+#define XUSER_STATS_ATTRS_IN_SPEC               64
+
+typedef struct _XUSER_STATS_COLUMN {
+	uint16_t wColumnId;
+	XUSER_DATA Value;
+} XUSER_STATS_COLUMN, *PXUSER_STATS_COLUMN;
+
+typedef struct _XUSER_STATS_ROW {
+	XUID xuid;
+	DWORD dwRank;
+	LONGLONG i64Rating;
+	char szGamertag[XUSER_NAME_SIZE];
+	DWORD dwNumColumns;
+	PXUSER_STATS_COLUMN pColumns;
+} XUSER_STATS_ROW, *PXUSER_STATS_ROW;
+
+typedef struct _XUSER_STATS_VIEW {
+	DWORD dwViewId;
+	DWORD dwTotalViewRows;
+	DWORD dwNumRows;
+	PXUSER_STATS_ROW pRows;
+} XUSER_STATS_VIEW, *PXUSER_STATS_VIEW;
+
+typedef struct _XUSER_STATS_READ_RESULTS {
+	DWORD dwNumViews;
+	PXUSER_STATS_VIEW pViews;
+} XUSER_STATS_READ_RESULTS, *PXUSER_STATS_READ_RESULTS;
+
+typedef struct _XUSER_STATS_SPEC {
+	DWORD dwViewId;
+	DWORD dwNumColumnIds;
+	uint16_t rgwColumnIds[XUSER_STATS_ATTRS_IN_SPEC];
+} XUSER_STATS_SPEC, *PXUSER_STATS_SPEC;
+
+#pragma pack(push, 1)
+typedef struct _XUSER_RANK_REQUEST {
+	DWORD dwViewId;
+	LONGLONG i64Rating;
+} XUSER_RANK_REQUEST;
+
+typedef struct _XUSER_ESTIMATE_RANK_RESULTS {
+	DWORD dwNumRanks;
+	DWORD* pdwRanks;
+} XUSER_ESTIMATE_RANK_RESULTS;
+#pragma pack(pop)
+
+// --- Achievements --------------------------------------------------------------------------------
+
+#define XACHIEVEMENT_MAX_COUNT          200
+#define XACHIEVEMENT_MAX_LABEL_LENGTH   32
+#define XACHIEVEMENT_MAX_DESC_LENGTH    100
+#define XACHIEVEMENT_MAX_UNACH_LENGTH   100
+#define XACHIEVEMENT_INVALID_ID         ((DWORD)0xFFFFFFFF)
+
+#define XACHIEVEMENT_DETAILS_MASK_TYPE          0x00000007
+#define XACHIEVEMENT_DETAILS_SHOWUNACHIEVED     0x00000008
+#define XACHIEVEMENT_DETAILS_ACHIEVED_ONLINE    0x00010000
+#define XACHIEVEMENT_DETAILS_ACHIEVED           0x00020000
+
+#define XACHIEVEMENT_TYPE_COMPLETION    1
+#define XACHIEVEMENT_TYPE_LEVELING      2
+#define XACHIEVEMENT_TYPE_UNLOCK        3
+#define XACHIEVEMENT_TYPE_EVENT         4
+#define XACHIEVEMENT_TYPE_TOURNAMENT    5
+#define XACHIEVEMENT_TYPE_CHECKPOINT    6
+#define XACHIEVEMENT_TYPE_OTHER         7
+
+#define XACHIEVEMENT_DETAILS_ALL            0xFFFFFFFF
+#define XACHIEVEMENT_DETAILS_LABEL          0x00000001
+#define XACHIEVEMENT_DETAILS_DESCRIPTION    0x00000002
+#define XACHIEVEMENT_DETAILS_UNACHIEVED     0x00000004
+#define XACHIEVEMENT_DETAILS_TFC            0x00000020
+
+typedef struct _XUSER_ACHIEVEMENT {
+	DWORD dwUserIndex;
+	DWORD dwAchievementId;
+} XUSER_ACHIEVEMENT, *PXUSER_ACHIEVEMENT;
+
+typedef struct _XACHIEVEMENT_DETAILS {
+	DWORD dwId;
+	LPWSTR pwszLabel;
+	LPWSTR pwszDescription;
+	LPWSTR pwszUnachieved;
+	DWORD dwImageId;
+	DWORD dwCred;
+	FILETIME ftAchieved;
+	DWORD dwFlags;
+} XACHIEVEMENT_DETAILS, *PXACHIEVEMENT_DETAILS;
+
+#define XACHIEVEMENT_SIZE_BASE      (sizeof(XACHIEVEMENT_DETAILS))
+#define XACHIEVEMENT_SIZE_STRINGS   (sizeof(wchar_t) * ((XACHIEVEMENT_MAX_LABEL_LENGTH + 1) + (XACHIEVEMENT_MAX_DESC_LENGTH + 1) + (XACHIEVEMENT_MAX_UNACH_LENGTH + 1)))
+#define XACHIEVEMENT_SIZE_FULL      (XACHIEVEMENT_SIZE_BASE + XACHIEVEMENT_SIZE_STRINGS)
+
+// --- Storage (title managed storage) -------------------------------------------------------------
+
+typedef enum _XSTORAGE_FACILITY {
+	XSTORAGE_FACILITY_GAME_CLIP = 1,
+	XSTORAGE_FACILITY_PER_TITLE = 2,
+	XSTORAGE_FACILITY_PER_USER_TITLE = 3,
+} XSTORAGE_FACILITY;
+
+typedef struct _XSTORAGE_FACILITY_INFO_GAME_CLIP {
+	DWORD dwLeaderboardID;
+} XSTORAGE_FACILITY_INFO_GAME_CLIP;
+
+#define XONLINE_MAX_PATHNAME_LENGTH         255
+#define XSTORAGE_MAX_MEMORY_BUFFER_SIZE     100000000
+#define XSTORAGE_MAX_RESULTS_TO_RETURN      256
+
+#pragma pack(push, 1)
+typedef struct _XSTORAGE_FILE_INFO {
+	DWORD dwTitleID;
+	DWORD dwTitleVersion;
+	XUID qwOwnerPUID;
+	uint8_t bCountryID;
+	uint64_t qwReserved;
+	DWORD dwContentType;
+	DWORD dwStorageSize;
+	DWORD dwInstalledSize;
+	FILETIME ftCreated;
+	FILETIME ftLastModified;
+	uint16_t wAttributesSize;
+	uint16_t cchPathName;
+	wchar_t* pwszPathName;
+	uint8_t* pbAttributes;
+} XSTORAGE_FILE_INFO, *PXSTORAGE_FILE_INFO;
+
+typedef struct _XSTORAGE_ENUMERATE_RESULTS {
+	DWORD dwTotalNumItems;
+	DWORD dwNumItemsReturned;
+	XSTORAGE_FILE_INFO* pItems;
+} XSTORAGE_ENUMERATE_RESULTS;
+
+typedef struct _XSTORAGE_DOWNLOAD_TO_MEMORY_RESULTS {
+	DWORD dwBytesTotal;
+	XUID xuidOwner;
+	FILETIME ftCreated;
+} XSTORAGE_DOWNLOAD_TO_MEMORY_RESULTS;
+
+typedef struct _STRING_DATA {
+	uint16_t wStringSize;
+	wchar_t* pszString;
+} STRING_DATA;
+
+typedef struct _STRING_VERIFY_RESPONSE {
+	uint16_t wNumStrings;
+	HRESULT* pStringResult;
+} STRING_VERIFY_RESPONSE;
+#pragma pack(pop)
+
+#define XSTRING_MAX_LENGTH  512
+#define XSTRING_MAX_STRINGS 10
+
+// --- Content and marketplace ---------------------------------------------------------------------
+
+#define XCONTENTTYPE_SAVEDGAME      0x00000001
+#define XCONTENTTYPE_MARKETPLACE    0x00000002
+#define XCONTENTTYPE_PUBLISHER      0x00000003
+
+#define XLIVE_CONTENT_ID_SIZE       20
+#define XLIVE_LICENSE_ID_SIZE       20
+#define XLIVE_CONTENT_API_VERSION   1
+#define XLIVE_LICENSE_INFO_VERSION  1
+#define XCONTENT_MAX_DISPLAYNAME_LENGTH 128
+
+#define XLIVE_CONTENT_FLAG_RETRIEVE_FOR_ALL_USERS   0x00000001
+#define XLIVE_CONTENT_FLAG_RETRIEVE_BY_XUID         0x00000008
+
+typedef struct _XLIVE_LICENSE_INFO {
+	DWORD dwContentAPIVersion;
+	uint8_t abContentID[XLIVE_LICENSE_ID_SIZE];
+	DWORD dwLicenseMask;
+} XLIVE_LICENSE_INFO, *PXLIVE_LICENSE_INFO;
+
+typedef struct _XLIVE_CONTENT_INFO {
+	DWORD dwContentAPIVersion;
+	DWORD dwTitleID;
+	DWORD dwContentType;
+	uint8_t abContentID[XLIVE_CONTENT_ID_SIZE];
+} XLIVE_CONTENT_INFO, *PXLIVE_CONTENT_INFO;
+
+typedef struct _XLIVE_CONTENT_RETRIEVAL_INFO {
+	DWORD dwContentAPIVersion;
+	DWORD dwRetrievalMask;
+	DWORD dwUserIndex;
+	XUID xuidUser;
+	DWORD dwTitleID;
+	DWORD dwContentType;
+	uint8_t abContentID[XLIVE_CONTENT_ID_SIZE];
+} XLIVE_CONTENT_RETRIEVAL_INFO, *PXLIVE_CONTENT_RETRIEVAL_INFO;
+
+typedef enum _XLIVE_CONTENT_INSTALL_NOTIFICATION {
+	XLIVE_CONTENT_INSTALL_NOTIFY_TICKS_REQUIRED = 0,
+	XLIVE_CONTENT_INSTALL_NOTIFY_STARTCOPY,
+	XLIVE_CONTENT_INSTALL_NOTIFY_ENDCOPY,
+	XLIVE_CONTENT_INSTALL_NOTIFY_STARTLICENSEVERIFY,
+	XLIVE_CONTENT_INSTALL_NOTIFY_ENDLICENSEVERIFY,
+	XLIVE_CONTENT_INSTALL_NOTIFY_STARTDELETE,
+	XLIVE_CONTENT_INSTALL_NOTIFY_ENDDELETE,
+	XLIVE_CONTENT_INSTALL_NOTIFY_STARTMOVE,
+	XLIVE_CONTENT_INSTALL_NOTIFY_ENDMOVE,
+	XLIVE_CONTENT_INSTALL_NOTIFY_STARTFILEVERIFY,
+	XLIVE_CONTENT_INSTALL_NOTIFY_ENDFILEVERIFY
+} XLIVE_CONTENT_INSTALL_NOTIFICATION;
+
+typedef HRESULT (WINAPI* XLIVE_CONTENT_INSTALL_CALLBACK)(void* pContext, XLIVE_CONTENT_INSTALL_NOTIFICATION Notification, DWORD dwCurrentTick, UINT_PTR Param1, UINT_PTR Param2, HRESULT hrCurrentStatus);
+
+typedef struct _XLIVE_CONTENT_INSTALL_CALLBACK_PARAMS {
+	DWORD cbSize;
+	XLIVE_CONTENT_INSTALL_CALLBACK pInstallCallback;
+	void* pInstallCallbackContext;
+	void* pInstallCallbackEx;
+} XLIVE_CONTENT_INSTALL_CALLBACK_PARAMS, *PXLIVE_CONTENT_INSTALL_CALLBACK_PARAMS;
+
+#define XMARKETPLACE_CONTENT_ID_LEN         20
+#define XMARKETPLACE_MAX_OFFERIDS           20
+#define XMARKETPLACE_MAX_OFFERS_ENUMERATED  100
+#define XMARKETPLACE_ASSET_SIGNATURE_SIZE   256
+#define XMARKETPLACE_IMAGE_URL_MINIMUM_WCHARCOUNT 55
+
+typedef enum {
+	XMARKETPLACE_OFFERING_TYPE_CONTENT      = 0x00000002,
+	XMARKETPLACE_OFFERING_TYPE_GAME_DEMO    = 0x00000020,
+	XMARKETPLACE_OFFERING_TYPE_GAME_TRAILER = 0x00000040,
+	XMARKETPLACE_OFFERING_TYPE_THEME        = 0x00000080,
+	XMARKETPLACE_OFFERING_TYPE_TILE         = 0x00000800,
+	XMARKETPLACE_OFFERING_TYPE_ARCADE       = 0x00002000,
+	XMARKETPLACE_OFFERING_TYPE_VIDEO        = 0x00004000,
+	XMARKETPLACE_OFFERING_TYPE_CONSUMABLE   = 0x00010000,
+} XMARKETPLACE_OFFERING_TYPE;
+
+typedef struct _XMARKETPLACE_CONTENTOFFER_INFO {
+	uint64_t qwOfferID;
+	uint64_t qwPreviewOfferID;
+	DWORD dwOfferNameLength;
+	wchar_t* wszOfferName;
+	DWORD dwOfferType;
+	uint8_t contentId[XMARKETPLACE_CONTENT_ID_LEN];
+	BOOL fIsUnrestrictedLicense;
+	DWORD dwLicenseMask;
+	DWORD dwTitleID;
+	DWORD dwContentCategory;
+	DWORD dwTitleNameLength;
+	wchar_t* wszTitleName;
+	BOOL fUserHasPurchased;
+	DWORD dwPackageSize;
+	DWORD dwInstallSize;
+	DWORD dwSellTextLength;
+	wchar_t* wszSellText;
+	DWORD dwAssetID;
+	DWORD dwPurchaseQuantity;
+	DWORD dwPointsPrice;
+} XMARKETPLACE_CONTENTOFFER_INFO, *PXMARKETPLACE_CONTENTOFFER_INFO;
+
+typedef struct _XMARKETPLACE_ASSET {
+	DWORD dwAssetID;
+	DWORD dwQuantity;
+} XMARKETPLACE_ASSET, *PXMARKETPLACE_ASSET;
+
+typedef struct _XMARKETPLACE_ASSET_PACKAGE {
+	FILETIME ftEnumerate;
+	DWORD cAssets;
+	DWORD cTotalAssets;
+	XMARKETPLACE_ASSET aAssets[1];
+} XMARKETPLACE_ASSET_PACKAGE, *PXMARKETPLACE_ASSET_PACKAGE;
+
+typedef struct _XMARKETPLACE_ASSET_ENUMERATE_REPLY {
+	uint8_t signature[XMARKETPLACE_ASSET_SIGNATURE_SIZE];
+	XMARKETPLACE_ASSET_PACKAGE assetPackage;
+} XMARKETPLACE_ASSET_ENUMERATE_REPLY, *PXMARKETPLACE_ASSET_ENUMERATE_REPLY;
+
+typedef struct _XOFFERING_CONTENTAVAILABLE_RESULT {
+	DWORD dwNewOffers;
+	DWORD dwTotalOffers;
+} XOFFERING_CONTENTAVAILABLE_RESULT;
+
+#define XLIVE_OFFER_INFO_VERSION            2
+#define XLIVE_OFFER_INFO_TITLE_LENGTH       50
+#define XLIVE_OFFER_INFO_DESCRIPTION_LENGTH 500
+#define XLIVE_OFFER_INFO_IMAGEURL_LENGTH    1024
+
+typedef struct _XLIVE_OFFER_INFO {
+	uint64_t qwOfferID;
+	wchar_t pszName[XLIVE_OFFER_INFO_TITLE_LENGTH];
+	wchar_t pszDescription[XLIVE_OFFER_INFO_DESCRIPTION_LENGTH];
+	wchar_t pszImageUrl[XLIVE_OFFER_INFO_IMAGEURL_LENGTH];
+	DWORD dwPointsCost;
+	wchar_t pszGameTitle[XLIVE_OFFER_INFO_TITLE_LENGTH];
+	wchar_t pszMediaType[XLIVE_OFFER_INFO_TITLE_LENGTH];
+} XLIVE_OFFER_INFO, *PXLIVE_OFFER_INFO;
+
+typedef enum _XSHOWMARKETPLACEUI_ENTRYPOINTS {
+	XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTLIST,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTITEM,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_MEMBERSHIPLIST,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_MEMBERSHIPITEM,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTLIST_BACKGROUND,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_CONTENTITEM_BACKGROUND,
+	XSHOWMARKETPLACEUI_ENTRYPOINT_MAX
+} XSHOWMARKETPLACEUI_ENTRYPOINTS;
+
+#define MPDI_E_CANCELLED            ((HRESULT)0x8057F001)
+#define MPDI_E_INVALIDARG           ((HRESULT)0x8057F002)
+#define MPDI_E_OPERATION_FAILED     ((HRESULT)0x8057F003)
+
+// --- XLocator ------------------------------------------------------------------------------------
+
+#define XLOCATOR_SERVERTYPE_PUBLIC                  0
+#define XLOCATOR_SERVERTYPE_GOLD_ONLY               1
+#define XLOCATOR_SERVERTYPE_PEER_HOSTED             2
+#define XLOCATOR_SERVERTYPE_PEER_HOSTED_GOLD_ONLY   3
+#define XLOCATOR_DEDICATEDSERVER_PROPERTY_START     0x200
+
+typedef struct _XLOCATOR_SEARCHRESULT {
+	XUID serverID;
+	DWORD dwServerType;
+	XNADDR serverAddress;
+	XNKID xnkid;
+	XNKEY xnkey;
+	DWORD dwMaxPublicSlots;
+	DWORD dwMaxPrivateSlots;
+	DWORD dwFilledPublicSlots;
+	DWORD dwFilledPrivateSlots;
+	DWORD cProperties;
+	PXUSER_PROPERTY pProperties;
+} XLOCATOR_SEARCHRESULT, *PXLOCATOR_SEARCHRESULT;
+
+typedef struct _XLOCATOR_FILTER_GROUP {
+	DWORD dwNumFilters;
+	void* pFilters;
+} XLOCATOR_FILTER_GROUP;
+
+typedef struct _XLOCATOR_SORTER {
+	DWORD dwPropertyId;
+	BOOL fAscending;
+} XLOCATOR_SORTER;
+
+typedef struct _XLOCATOR_INIT_INFO {
+	DWORD dwReserved1;
+	DWORD dwReserved2;
+	uint16_t wReserved3;
+	char abReserved4[0x22];
+} XLOCATOR_INIT_INFO;
+
+// --- UI ------------------------------------------------------------------------------------------
+
+#define XSSUI_FLAGS_LOCALSIGNINONLY             0x00000001
+#define XSSUI_FLAGS_SHOWONLYONLINEENABLED       0x00000002
+#define XSSUI_FLAGS_ALLOW_SIGNOUT               0x00000004
+#define XSSUI_FLAGS_DISALLOW_PLAYAS             0x00000010
+#define XSSUI_FLAGS_ADDUSER                     0x00010000
+#define XSSUI_FLAGS_COMPLETESIGNIN              0x00020000
+#define XSSUI_FLAGS_ENABLE_GUEST                0x00080000
+#define XSSUI_FLAGS_DISALLOWRELOAD              0x00100000
+#define XSSUI_FLAGS_CONVERTOFFLINETOGUEST       0x00400000
+#define XSSUI_FLAGS_DISALLOW_GUEST              0x01000000
+
+#define XMB_NOICON                  0x00000000
+#define XMB_ERRORICON               0x00000001
+#define XMB_WARNINGICON             0x00000002
+#define XMB_ALERTICON               0x00000003
+#define XMB_ICON_MASK               0x00000003
+#define XMB_PASSCODEMODE            0x00010000
+#define XMB_VERIFYPASSCODEMODE      0x00020000
+#define XMB_MODE_MASK               0x000F0000
+#define XMB_MAXBUTTONS              3
+#define XMB_CANCELID                (-1)
+
+typedef struct _MESSAGEBOX_RESULT {
+	union {
+		DWORD dwButtonPressed;
+		uint16_t rgwPasscode[4];
+	};
+} MESSAGEBOX_RESULT, *PMESSAGEBOX_RESULT;
+
+#define VKBD_DEFAULT                0x00000000
+#define VKBD_LATIN_FULL             0x00000001
+#define VKBD_LATIN_EMAIL            0x00000002
+#define VKBD_LATIN_GAMERTAG         0x00000004
+#define VKBD_LATIN_PHONE            0x00000008
+#define VKBD_LATIN_IP_ADDRESS       0x00000010
+#define VKBD_LATIN_NUMERIC          0x00000020
+#define VKBD_LATIN_ALPHABET         0x00000040
+#define VKBD_LATIN_PASSWORD         0x00000080
+#define VKBD_LATIN_SUBSCRIPTION     0x00000100
+#define VKBD_SELECT_OK              0x10000000
+#define VKBD_HIGHLIGHT_TEXT         0x20000000
+#define VKBD_MULTILINE              0x40000000
+#define VKBD_ENABLEIME              0x80000000
+
+#define XPLAYERLIST_CUSTOMTEXT_MAX_LENGTH   31
+#define XPLAYERLIST_TITLE_MAX_LENGTH        36
+#define XPLAYERLIST_DESCRIPTION_MAX_LENGTH  83
+#define XPLAYERLIST_MAX_PLAYERS             100
+#define XPLAYERLIST_BUTTONTEXT_MAX_LENGTH   23
+
+typedef struct {
+	XUID xuid;
+	wchar_t wszCustomText[XPLAYERLIST_CUSTOMTEXT_MAX_LENGTH];
+} XPLAYERLIST_USER;
+
+typedef struct {
+	XUID xuidSelected;
+	DWORD dwKeyCode;
+} XPLAYERLIST_RESULT;
+
+typedef struct {
+	DWORD dwType;
+	wchar_t wszCustomText[XPLAYERLIST_BUTTONTEXT_MAX_LENGTH];
+} XPLAYERLIST_BUTTON;
+
+typedef struct _XINPUT_KEYSTROKE {
+	uint16_t VirtualKey;
+	wchar_t Unicode;
+	uint16_t Flags;
+	uint8_t UserIndex;
+	uint8_t HidCode;
+} XINPUT_KEYSTROKE, *PXINPUT_KEYSTROKE;
+
+typedef struct {
+	uint16_t wActionId;
+	wchar_t wszActionText[23];
+	DWORD dwFlags;
+} XCUSTOMACTION;
+
+#define XCUSTOMACTION_MAX_PAYLOAD_SIZE 1024
+
+// --- XLive core ----------------------------------------------------------------------------------
+
+#define XLIVE_INITFLAG_USE_ADAPTER_NAME 1
+#define XLIVE_INITFLAG_NO_AUTO_LOGON    2
+
+typedef struct _XLIVE_INITIALIZE_INFO {
+	UINT cbSize;
+	DWORD dwFlags;
+	IUnknown* pD3D;
+	void* pD3DPP;
+	LANGID langID;
+	uint16_t wReserved1;
+	char* pszAdapterName;
+	uint16_t wLivePortOverride;
+	uint16_t wReserved2;
+} XLIVE_INITIALIZE_INFO;
+
+typedef enum _XLIVE_DEBUG_LEVEL {
+	XLIVE_DEBUG_LEVEL_OFF = 0,
+	XLIVE_DEBUG_LEVEL_ERROR,
+	XLIVE_DEBUG_LEVEL_WARNING,
+	XLIVE_DEBUG_LEVEL_INFO,
+	XLIVE_DEBUG_LEVEL_DEFAULT
+} XLIVE_DEBUG_LEVEL;
+
+typedef struct _XLIVE_INPUT_INFO {
+	UINT cbSize;
+	HWND hWnd;
+	UINT uMSG;
+	WPARAM wParam;
+	LPARAM lParam;
+	BOOL fHandled;
+	LRESULT lRet;
+} XLIVE_INPUT_INFO;
+
+typedef struct _XLIVEUPDATE_INFORMATION {
+	DWORD cbSize;
+	BOOL bSystemUpdate;
+	DWORD dwFromVersion;
+	DWORD dwToVersion;
+	wchar_t szUpdateDownloadPath[MAX_PATH];
+} XLIVEUPDATE_INFORMATION, *PXLIVEUPDATE_INFORMATION;
+
+#pragma pack(push, 1)
+typedef struct {
+	DWORD dwSize;
+	uint8_t bData; // First byte of dwSize bytes.
+} XLIVE_PROTECTED_BUFFER;
+#pragma pack(pop)
+
+#define XLIVE_PROTECTED_DATA_FLAG_OFFLINE_ONLY 0x00000001
+
+typedef struct _XLIVE_PROTECTED_DATA_INFORMATION {
+	DWORD cbSize;
+	DWORD dwFlags;
+} XLIVE_PROTECTED_DATA_INFORMATION, *PXLIVE_PROTECTED_DATA_INFORMATION;
+
+#define XLMGRCREDS_FLAG_SAVE            1
+#define XLMGRCREDS_FLAG_DELETE          2
+#define XLSIGNIN_FLAG_SAVECREDS         1
+#define XLSIGNIN_FLAG_ALLOWTITLEUPDATES 2
+#define XLSIGNIN_FLAG_ALLOWSYSTEMUPDATES 4
+
+// Languages as XLANGUAGE_* in the SPA string tables.
+#define XLANGUAGE_INVALID    0
+#define XLANGUAGE_ENGLISH    1
+#define XLANGUAGE_JAPANESE   2
+#define XLANGUAGE_GERMAN     3
+#define XLANGUAGE_FRENCH     4
+#define XLANGUAGE_SPANISH    5
+#define XLANGUAGE_ITALIAN    6
+#define XLANGUAGE_KOREAN     7
+#define XLANGUAGE_TCHINESE   8
+#define XLANGUAGE_PORTUGUESE 9
+#define XLANGUAGE_SCHINESE   10
+#define XLANGUAGE_POLISH     11
+#define XLANGUAGE_RUSSIAN    12
+
+// --- XHV voice -----------------------------------------------------------------------------------
+
+#define XHV_MAX_REMOTE_TALKERS          30
+#define XHV_MAX_LOCAL_TALKERS           4
+#define XHV_MAX_PROCESSING_MODES        2
+#define XHV_PLAYBACK_PRIORITY_MAX       0
+#define XHV_PLAYBACK_PRIORITY_MIN       0xFFFF
+#define XHV_PLAYBACK_PRIORITY_NEVER     0xFFFFFFFF
+#define XHV_MAX_VOICECHAT_PACKETS       10
+#define XHV_PCM_BYTES_PER_SAMPLE        2
+#define XHV_PCM_SAMPLE_RATE             16000
+#define XHV_VOICECHAT_DATA_READY_MASK   0xF
+#define XHV_LOOPBACK_MODE               1
+#define XHV_VOICECHAT_MODE              2
+
+typedef DWORD XHV_PROCESSING_MODE, *PXHV_PROCESSING_MODE;
+typedef DWORD XHV_PLAYBACK_PRIORITY;
+typedef DWORD XHV_LOCK_TYPE;
+
+#define XHV_LOCK_TYPE_LOCK      0
+#define XHV_LOCK_TYPE_TRYLOCK   1
+#define XHV_LOCK_TYPE_UNLOCK    2
+
+typedef void (__stdcall* PFNMICRAWDATAREADY)(DWORD dwUserIndex, void* pvData, DWORD dwSize, BOOL* pVoiceDetected);
+
+typedef void* XAUDIOVOICEFXCHAIN;
+typedef void* XAUDIOSUBMIXVOICE;
+
+typedef struct XHV_INIT_PARAMS {
+	DWORD dwMaxRemoteTalkers;
+	DWORD dwMaxLocalTalkers;
+	PXHV_PROCESSING_MODE localTalkerEnabledModes;
+	DWORD dwNumLocalTalkerEnabledModes;
+	PXHV_PROCESSING_MODE remoteTalkerEnabledModes;
+	DWORD dwNumRemoteTalkerEnabledModes;
+	BOOL bCustomVADProvided;
+	BOOL bRelaxPrivileges;
+	PFNMICRAWDATAREADY pfnMicrophoneRawDataReady;
+	HWND hwndFocus;
+} XHV_INIT_PARAMS, *PXHV_INIT_PARAMS;
+
+#pragma pack(push, 1)
+typedef struct XHV_CODEC_HEADER {
+	uint16_t bMsgNo : 4;
+	uint16_t wSeqNo : 11;
+	uint16_t bFriendsOnly : 1;
+} XHV_CODEC_HEADER, *PXHV_CODEC_HEADER;
+#pragma pack(pop)
+
+#pragma pack(push, 4)
+class IXHVEngine {
+public:
+	virtual LONG __stdcall AddRef() = 0;
+	virtual LONG __stdcall Release() = 0;
+	virtual HRESULT __stdcall Lock(XHV_LOCK_TYPE lockType) = 0;
+	virtual HRESULT __stdcall StartLocalProcessingModes(DWORD dwUserIndex, const XHV_PROCESSING_MODE* processingModes, DWORD dwNumProcessingModes) = 0;
+	virtual HRESULT __stdcall StopLocalProcessingModes(DWORD dwUserIndex, const XHV_PROCESSING_MODE* processingModes, DWORD dwNumProcessingModes) = 0;
+	virtual HRESULT __stdcall StartRemoteProcessingModes(XUID xuidRemoteTalker, const XHV_PROCESSING_MODE* processingModes, DWORD dwNumProcessingModes) = 0;
+	virtual HRESULT __stdcall StopRemoteProcessingModes(XUID xuidRemoteTalker, const XHV_PROCESSING_MODE* processingModes, DWORD dwNumProcessingModes) = 0;
+	virtual HRESULT __stdcall SetMaxDecodePackets(DWORD dwMaxDecodePackets) = 0;
+	virtual HRESULT __stdcall RegisterLocalTalker(DWORD dwUserIndex) = 0;
+	virtual HRESULT __stdcall UnregisterLocalTalker(DWORD dwUserIndex) = 0;
+	virtual HRESULT __stdcall RegisterRemoteTalker(XUID xuidRemoteTalker, XAUDIOVOICEFXCHAIN* pfxRemoteTalkerFX, XAUDIOVOICEFXCHAIN* pfxTalkerPairFX, XAUDIOSUBMIXVOICE* pOutputVoice) = 0;
+	virtual HRESULT __stdcall UnregisterRemoteTalker(XUID xuidRemoteTalker) = 0;
+	virtual HRESULT __stdcall GetRemoteTalkers(DWORD* pdwRemoteTalkersCount, XUID* pxuidRemoteTalkers) = 0;
+	virtual BOOL __stdcall IsHeadsetPresent(DWORD dwUserIndex) = 0;
+	virtual BOOL __stdcall IsLocalTalking(DWORD dwUserIndex) = 0;
+	virtual BOOL __stdcall IsRemoteTalking(XUID xuidRemoteTalker) = 0;
+	virtual DWORD __stdcall GetDataReadyFlags() = 0;
+	virtual HRESULT __stdcall GetLocalChatData(DWORD dwUserIndex, uint8_t* pbData, DWORD* pdwSize, DWORD* pdwPackets) = 0;
+	virtual HRESULT __stdcall SetPlaybackPriority(XUID xuidRemoteTalker, DWORD dwUserIndex, XHV_PLAYBACK_PRIORITY playbackPriority) = 0;
+	virtual HRESULT __stdcall SubmitIncomingChatData(XUID xuidRemoteTalker, const uint8_t* pbData, DWORD* pdwSize) = 0;
+};
+typedef IXHVEngine* LPIXHVENGINE, *PIXHVENGINE;
+#pragma pack(pop)
+
+#pragma pack(pop)

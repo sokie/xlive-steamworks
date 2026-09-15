@@ -1,0 +1,86 @@
+// xlive_steamworks.json - place next to xlive.dll (or the exe). Every key is optional.
+// Comments are allowed. Numbers accept 0x hex.
+{
+	"log": {
+		"level": "info",          // off, error, warn, info, debug, trace
+		"path": "",               // default: <xlive.dll dir>\xlive_steamworks.log
+		"debugger": false         // also OutputDebugString
+	},
+
+	"steam": {
+		"app_id": 0,                        // 0 = steam_appid.txt / Steam launcher
+		"restart_app_if_necessary": false,  // SteamAPI_RestartAppIfNecessary before init
+		"required": true,                   // show a warning when Steam is not running
+		"async_timeout_ms": 15000           // how long a synchronous X* call waits on Steam
+	},
+
+	"title": {
+		"title_id": 0,        // 0 = from the SPA resource in the exe
+		"title_version": 0,
+		"language": 0         // XLANGUAGE_* (1 = English), 0 = follow the Steam game language
+	},
+
+	"users": {
+		"ascii_gamertags": true,             // fold non-ASCII persona names for latin-1 fonts
+		"extra_local_users_signed_in": false // report user indexes 1-3 as signed in locally
+	},
+
+	"achievements": {
+		"name_format": "ACH_%u",   // Steam API name for SPA achievement id %u
+		"from_steam_when_no_spa": true,
+		"map": {                   // explicit overrides, SPA id -> Steam API name
+			// "1": "FIRST_BLOOD",
+			// "2": "VETERAN"
+		}
+	},
+
+	"leaderboards": {
+		"name_format": "LB_%u",    // Steam leaderboard name for SPA stats view id %u
+		"create_if_missing": true, // FindOrCreateLeaderboard instead of FindLeaderboard
+		"map": {
+			// "1": "Kills",
+			// "2": { "name": "BestLapTime", "rating_column": 1, "detail_columns": [2, 3], "keep_best": true, "ascending": true, "display_type": 3 }
+		}
+	},
+
+	"stats": {
+		// "<viewId>:<columnId>": "STEAM_STAT_NAME"  - also mirror a written column into a Steam stat
+	},
+
+	"sessions": {
+		"lobby_key_prefix": "xl_",
+		"lobby_distance_filter": 1,   // 0 close, 1 default, 2 far, 3 worldwide
+		"accept_any_peer": true       // accept SteamNetworkingMessages sessions from any user
+	},
+
+	"presence": {
+		"key": "status",          // rich presence key that carries the SPA presence line
+		"steam_display": true     // also set steam_display to "#status" (define the token on Steamworks)
+	},
+
+	"storage": {
+		"cloud": true,                          // Steam Cloud for profile and per-user title storage
+		"title_dir": "xlive-title-storage",     // read-only per-title files shipped with the game
+		"local_dir": "xlive-storage"            // fallback when Cloud is off
+	},
+
+	"content": {
+		"auto_discover": true,    // list every Steam DLC of the app as a content package
+		"dlc_dir": "DLC",         // auto discovered packages live in <dlc_dir>\<appid>
+		"dlc": [
+			// { "app_id": 123456, "content_id": "0011223344556677889900112233445566778899", "content_type": 2, "display_name": "Map Pack 1", "path": "DLC\\MapPack1", "offer_id": 123456 }
+		]
+	},
+
+	"title_servers": [
+		// { "name": "master", "ip": "203.0.113.10", "port": 27015, "service_id": 1, "info": "master" }
+	],
+
+	"voice": {
+		"enabled": true
+	},
+
+	"ui": {
+		"native_dialogs": true    // Win32 dialogs for XShowKeyboardUI / XShowMessageBoxUI outside Big Picture
+	}
+}
