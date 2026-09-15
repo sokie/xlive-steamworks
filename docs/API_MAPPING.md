@@ -50,7 +50,7 @@ Kinds:
 
 | Export | Kind | Steam side / behaviour |
 | --- | --- | --- |
-| XUserWriteAchievements | 1:1 | `SetAchievement(name)` + `StoreStats` with the name from config or `ACH_<id>` |
+| XUserWriteAchievements | 1:1 | `SetAchievement(name)` + `StoreStats` with the name from config or `ACH_<id>`. When the app has no such Steam achievement the unlock is recorded in the per-user file `xlive/achievements.bin` (`achievements.local_fallback`) |
 | XUserCreateAchievementEnumerator | middle | list from the SPA (ids, text, cred, image ids), unlock state from `GetAchievementAndUnlockTime`. Other users through `RequestUserStats` + `GetUserAchievementAndUnlockTime` |
 | XUserReadAchievementPicture | middle | SPA PNG decoded to BGRA, falls back to `GetAchievementIcon` |
 

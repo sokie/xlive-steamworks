@@ -191,6 +191,11 @@ bool SteamStart()
 
 	SteamErrMsg error = {};
 	ESteamAPIInitResult result = k_ESteamAPIInitResult_OK;
+	if (!g_ownedByTitle && SteamAPI_GetHSteamPipe() && SteamAPI_GetHSteamUser()) {
+		// The exe already called SteamAPI_Init (a Steam build with DLC checks) so share it.
+		g_ownedByTitle = true;
+		XLS_LOG_INFO("steam: the title initialised the Steam API itself.");
+	}
 	if (g_ownedByTitle) {
 		if (!SteamUser() || !SteamUtils()) {
 			XLS_LOG_ERROR("steam: the title owns the Steam API but it is not initialised.");
@@ -203,7 +208,8 @@ bool SteamStart()
 	if (result != k_ESteamAPIInitResult_OK) {
 		XLS_LOG_ERROR("steam: SteamAPI_InitEx failed (%d): %s", (int)result, error);
 		if (config.requireSteam) {
-			MessageBoxW(nullptr, L"Steam must be running and you must be logged in to play online.\n\nThe game will continue in offline mode.", L"Steam not available", MB_OK | MB_ICONWARNING);
+			std::wstring text = L"Steam must be running, logged in, and this account must own the game to play online.\n\nSteam said: " + Utf8ToWide(error) + L"\n\nThe game will continue in offline mode.";
+			MessageBoxW(nullptr, text.c_str(), L"Steam not available", MB_OK | MB_ICONWARNING);
 		}
 		return false;
 	}

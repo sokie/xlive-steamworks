@@ -169,6 +169,7 @@ bool ConfigLoad()
 			const Json& achievements = root["achievements"];
 			config.achievementNameFormat = achievements["name_format"].GetString("ACH_%u");
 			config.achievementsFromSteamWhenNoSpa = achievements["from_steam_when_no_spa"].GetBool(true);
+			config.achievementsLocalFallback = achievements["local_fallback"].GetBool(true);
 			for (const auto& item : achievements["map"].Items()) {
 				config.achievements[KeyToId(item.first)] = item.second.GetString(std::string());
 			}
