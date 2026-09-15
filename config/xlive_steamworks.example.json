@@ -28,6 +28,7 @@
 	"achievements": {
 		"name_format": "ACH_%u",   // Steam API name for SPA achievement id %u
 		"from_steam_when_no_spa": true,
+		"local_fallback": true,    // keep unlocks in the profile file when the app has no such Steam achievement
 		"map": {                   // explicit overrides, SPA id -> Steam API name
 			// "1": "FIRST_BLOOD",
 			// "2": "VETERAN"

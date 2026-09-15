@@ -64,6 +64,7 @@ struct Config {
 	std::string achievementNameFormat = "ACH_%u";
 	std::map<uint32_t, std::string> achievements;
 	bool achievementsFromSteamWhenNoSpa = true;
+	bool achievementsLocalFallback = true;  // Record unlocks locally when Steam has no such achievement.
 
 	// Stats and leaderboards.
 	std::string leaderboardNameFormat = "LB_%u";
