@@ -43,6 +43,8 @@ struct Session {
 	XSESSION_STATE state = XSESSION_STATE_LOBBY;
 	std::vector<Member> members; // Declared through XSessionJoin*, merged with lobby membership.
 	bool deleted = false;
+	uint64_t hostSeq = 0;        // Ordering of host claims: the highest one names the host.
+	bool pendingPublish = false; // Migrated to host before Steam handed this machine the lobby.
 };
 
 std::recursive_mutex g_mutex;
@@ -123,6 +125,7 @@ void PublishSession(Session& session)
 	matchmaking->SetLobbyData(lobby, Key("nonce").c_str(), xls::FormatA("%llu", session.nonce).c_str());
 	matchmaking->SetLobbyData(lobby, Key("xnkey").c_str(), xls::HexEncode(session.info.keyExchangeKey.ab, sizeof(session.info.keyExchangeKey.ab)).c_str());
 	matchmaking->SetLobbyData(lobby, Key("host").c_str(), xls::HexEncode(&session.info.hostAddress, sizeof(session.info.hostAddress)).c_str());
+	matchmaking->SetLobbyData(lobby, Key("hostseq").c_str(), xls::FormatA("%llu", session.hostSeq).c_str());
 	matchmaking->SetLobbyData(lobby, Key("state").c_str(), xls::FormatA("%u", (unsigned)session.state).c_str());
 	matchmaking->SetLobbyData(lobby, Key("gt").c_str(), xls::FormatA("%u", session.gameType).c_str());
 	matchmaking->SetLobbyData(lobby, Key("gm").c_str(), xls::FormatA("%u", session.gameMode).c_str());
@@ -153,6 +156,49 @@ void PublishRichPresenceConnect(const Session* session)
 	}
 }
 
+uint64_t HostClaimSeq()
+{
+	FILETIME now;
+	GetSystemTimeAsFileTime(&now);
+	return (((uint64_t)now.dwHighDateTime << 32) | now.dwLowDateTime) / 10000;
+}
+
+// A member that took over as host publishes "<xnaddr hex>|<seq>" in its member data, which
+// can be done without lobby ownership. Returns the member with the newest claim above minSeq, or nil.
+CSteamID NewestHostClaim(CSteamID lobby, uint64_t minSeq, XNADDR* hostAddress, uint64_t* seq)
+{
+	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
+	CSteamID claimant;
+	int count = matchmaking->GetNumLobbyMembers(lobby);
+	for (int i = 0; i < count; i++) {
+		CSteamID member = matchmaking->GetLobbyMemberByIndex(lobby, i);
+		const char* claim = matchmaking->GetLobbyMemberData(lobby, member, Key("host").c_str());
+		const char* separator = claim ? strchr(claim, '|') : nullptr;
+		if (!separator) {
+			continue;
+		}
+		uint64_t claimSeq = _strtoui64(separator + 1, nullptr, 10);
+		XNADDR address = {};
+		if (claimSeq <= minSeq || !xls::HexDecode(std::string(claim, separator).c_str(), &address, sizeof(address))) {
+			continue;
+		}
+		minSeq = claimSeq;
+		claimant = member;
+		if (hostAddress) {
+			*hostAddress = address;
+		}
+		if (seq) {
+			*seq = claimSeq;
+		}
+	}
+	return claimant;
+}
+
+uint64_t LobbyHostSeq(CSteamID lobby)
+{
+	return _strtoui64(xls::SteamMatchmaking()->GetLobbyData(lobby, Key("hostseq").c_str()), nullptr, 10);
+}
+
 bool ReadSessionInfo(CSteamID lobby, XSESSION_INFO* info)
 {
 	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
@@ -166,6 +212,7 @@ bool ReadSessionInfo(CSteamID lobby, XSESSION_INFO* info)
 	if (!xls::HexDecode(matchmaking->GetLobbyData(lobby, Key("host").c_str()), &info->hostAddress, sizeof(info->hostAddress))) {
 		xls::NetXnaddrForSteamId(matchmaking->GetLobbyOwner(lobby), &info->hostAddress);
 	}
+	NewestHostClaim(lobby, LobbyHostSeq(lobby), &info->hostAddress, nullptr);
 	return true;
 }
 
@@ -291,6 +338,61 @@ DWORD SearchBufferEstimate(DWORD results)
 	return sizeof(XSESSION_SEARCHRESULT_HEADER) + results * (sizeof(XSESSION_SEARCHRESULT) + 32 * sizeof(XUSER_CONTEXT) + 32 * (sizeof(XUSER_PROPERTY) + 64));
 }
 
+ELobbyComparison SteamComparison(xls::spa::Comparison c)
+{
+	switch (c) {
+		case xls::spa::Comparison::NotEqual: return k_ELobbyComparisonNotEqual;
+		case xls::spa::Comparison::Less: return k_ELobbyComparisonLessThan;
+		case xls::spa::Comparison::LessEqual: return k_ELobbyComparisonEqualToOrLessThan;
+		case xls::spa::Comparison::Greater: return k_ELobbyComparisonGreaterThan;
+		case xls::spa::Comparison::GreaterEqual: return k_ELobbyComparisonEqualToOrGreaterThan;
+		default: return k_ELobbyComparisonEqual;
+	}
+}
+
+const char* ComparisonText(ELobbyComparison c)
+{
+	switch (c) {
+		case k_ELobbyComparisonNotEqual: return "!=";
+		case k_ELobbyComparisonLessThan: return "<";
+		case k_ELobbyComparisonEqualToOrLessThan: return "<=";
+		case k_ELobbyComparisonGreaterThan: return ">";
+		case k_ELobbyComparisonEqualToOrGreaterThan: return ">=";
+		default: return "==";
+	}
+}
+
+// Steam compares lobby data numerically only through int, wider values fall back to text, where
+// only equality is meaningful.
+void AddFilter(const std::string& key, const XUSER_DATA& value, ELobbyComparison compare)
+{
+	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
+	int64_t number = 0;
+	bool numeric = true;
+	switch (value.type) {
+		case XUSER_DATA_TYPE_CONTEXT:
+		case XUSER_DATA_TYPE_INT32: number = value.nData; break;
+		case XUSER_DATA_TYPE_INT64: number = value.i64Data; break;
+		case XUSER_DATA_TYPE_FLOAT: number = (int64_t)value.fData; break;
+		case XUSER_DATA_TYPE_DOUBLE: number = (int64_t)value.dblData; break;
+		default: numeric = false; break;
+	}
+	if (numeric && number >= INT32_MIN && number <= INT32_MAX) {
+		matchmaking->AddRequestLobbyListNumericalFilter(key.c_str(), (int)number, compare);
+		XLS_LOG_DEBUG("session: filter %s %s %lld.", key.c_str(), ComparisonText(compare), number);
+		return;
+	}
+	xls::StoredProperty stored;
+	switch (value.type) {
+		case XUSER_DATA_TYPE_INT64: stored.Set(value.type, &value.i64Data, 8); break;
+		case XUSER_DATA_TYPE_UNICODE: stored.Set(value.type, value.string.pwszData, value.string.cbData); break;
+		case XUSER_DATA_TYPE_BINARY: stored.Set(value.type, value.binary.pbData, value.binary.cbData); break;
+		default: return;
+	}
+	matchmaking->AddRequestLobbyListStringFilter(key.c_str(), stored.ToString().c_str(), compare);
+	XLS_LOG_DEBUG("session: filter %s %s \"%s\" (text).", key.c_str(), ComparisonText(compare), stored.ToString().c_str());
+}
+
 void AddSearchFilters(DWORD procedureIndex, WORD propertyCount, WORD contextCount, const XUSER_PROPERTY* properties, const XUSER_CONTEXT* contexts, DWORD resultCount)
 {
 	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
@@ -299,89 +401,69 @@ void AddSearchFilters(DWORD procedureIndex, WORD propertyCount, WORD contextCoun
 	matchmaking->AddRequestLobbyListDistanceFilter((ELobbyDistanceFilter)xls::Cfg().lobbyDistanceFilter);
 	matchmaking->AddRequestLobbyListResultCountFilter((int)std::max<DWORD>(resultCount, 50));
 
-	// The XLAST query says which of the parameters a title passes are filters and which are only
-	// carried for display, without it every context and numeric property filters.
-	const xls::spa::Query* query = xls::spa::FindQuery(procedureIndex);
-	auto contextValue = [&](DWORD id, DWORD* value) {
-		for (WORD i = 0; i < contextCount; i++) {
-			if (contexts[i].dwContextId == id) {
-				*value = contexts[i].dwValue;
-				return true;
+	// The value the title passed for a query parameter id, as a context or a property.
+	auto parameter = [&](DWORD id, XUSER_DATA* out) {
+		if (XPROPERTYTYPEFROMID(id) == XUSER_DATA_TYPE_CONTEXT) {
+			for (WORD i = 0; i < contextCount; i++) {
+				if (contexts[i].dwContextId == id) {
+					memset(out, 0, sizeof(*out));
+					out->type = XUSER_DATA_TYPE_CONTEXT;
+					out->nData = (LONG)contexts[i].dwValue;
+					return true;
+				}
 			}
+			return false;
 		}
-		return false;
-	};
-	auto propertyValue = [&](DWORD id, const XUSER_PROPERTY** property) {
 		for (WORD i = 0; i < propertyCount; i++) {
 			if (properties[i].dwPropertyId == id) {
-				*property = &properties[i];
+				*out = properties[i].value;
 				return true;
 			}
 		}
 		return false;
 	};
-	auto comparison = [](xls::spa::Comparison c) {
-		switch (c) {
-			case xls::spa::Comparison::NotEqual: return k_ELobbyComparisonNotEqual;
-			case xls::spa::Comparison::Less: return k_ELobbyComparisonLessThan;
-			case xls::spa::Comparison::LessEqual: return k_ELobbyComparisonEqualToOrLessThan;
-			case xls::spa::Comparison::Greater: return k_ELobbyComparisonGreaterThan;
-			case xls::spa::Comparison::GreaterEqual: return k_ELobbyComparisonEqualToOrGreaterThan;
-			default: return k_ELobbyComparisonEqual;
-		}
-	};
-	auto addNumeric = [&](const std::string& key, int value, ELobbyComparison compare) {
-		matchmaking->AddRequestLobbyListNumericalFilter(key.c_str(), value, compare);
-	};
-	auto addProperty = [&](const XUSER_PROPERTY& property, ELobbyComparison compare) {
-		xls::StoredProperty stored;
-		const XUSER_DATA& value = property.value;
-		switch (value.type) {
-			case XUSER_DATA_TYPE_INT32: addNumeric(PropertyKey(property.dwPropertyId), value.nData, compare); break;
-			case XUSER_DATA_TYPE_INT64: stored.Set(value.type, &value.i64Data, 8); matchmaking->AddRequestLobbyListStringFilter(PropertyKey(property.dwPropertyId).c_str(), stored.ToString().c_str(), compare); break;
-			case XUSER_DATA_TYPE_UNICODE: stored.Set(value.type, value.string.pwszData, value.string.cbData); matchmaking->AddRequestLobbyListStringFilter(PropertyKey(property.dwPropertyId).c_str(), stored.ToString().c_str(), compare); break;
-			default: break;
-		}
-	};
 
-	if (query) {
-		for (const xls::spa::QueryFilter& filter : query->filters) {
-			bool isContext = XPROPERTYTYPEFROMID(filter.attributeId) == XUSER_DATA_TYPE_CONTEXT;
-			std::string key = isContext ? ContextKey(filter.attributeId) : PropertyKey(filter.attributeId);
-			switch (filter.operandType) {
-				case xls::spa::Operand::Constant: {
-					double constant = 0;
-					if (xls::spa::Constant(filter.operand, &constant)) {
-						addNumeric(key, (int)constant, comparison(filter.comparison));
-					}
-					break;
-				}
-				case xls::spa::Operand::ContextValue:
-					addNumeric(key, (int)filter.operand, comparison(filter.comparison));
-					break;
-				default: {
-					DWORD value = 0;
-					const XUSER_PROPERTY* property = nullptr;
-					if (isContext && contextValue(filter.attributeId, &value)) {
-						addNumeric(key, (int)value, comparison(filter.comparison));
-					}
-					else if (contextValue(filter.operand, &value)) {
-						addNumeric(key, (int)value, comparison(filter.comparison));
-					}
-					else if (propertyValue(filter.operand, &property) || propertyValue(filter.attributeId, &property)) {
-						addProperty(*property, comparison(filter.comparison));
-					}
-					break;
-				}
-			}
+	// The XLAST query says which attribute each filter tests and where its operand comes from,
+	// without it every context and property the title passes is an equality filter.
+	const xls::spa::Query* query = xls::spa::FindQuery(procedureIndex);
+	if (!query) {
+		for (WORD i = 0; i < contextCount; i++) {
+			XUSER_DATA value = {};
+			value.type = XUSER_DATA_TYPE_CONTEXT;
+			value.nData = (LONG)contexts[i].dwValue;
+			AddFilter(ContextKey(contexts[i].dwContextId), value, k_ELobbyComparisonEqual);
+		}
+		for (WORD i = 0; i < propertyCount; i++) {
+			AddFilter(PropertyKey(properties[i].dwPropertyId), properties[i].value, k_ELobbyComparisonEqual);
 		}
 		return;
 	}
-	for (WORD i = 0; i < contextCount; i++) {
-		addNumeric(ContextKey(contexts[i].dwContextId), (int)contexts[i].dwValue, k_ELobbyComparisonEqual);
-	}
-	for (WORD i = 0; i < propertyCount; i++) {
-		addProperty(properties[i], k_ELobbyComparisonEqual);
+	for (const xls::spa::QueryFilter& filter : query->filters) {
+		bool isContext = XPROPERTYTYPEFROMID(filter.attributeId) == XUSER_DATA_TYPE_CONTEXT;
+		std::string key = isContext ? ContextKey(filter.attributeId) : PropertyKey(filter.attributeId);
+		ELobbyComparison compare = SteamComparison(filter.comparison);
+		XUSER_DATA value = {};
+		value.type = XUSER_DATA_TYPE_INT32;
+		switch (filter.operandType) {
+			case xls::spa::Operand::Constant: {
+				double constant = 0;
+				if (!xls::spa::Constant(filter.operand, &constant)) {
+					continue;
+				}
+				value.nData = (LONG)constant;
+				break;
+			}
+			case xls::spa::Operand::ContextValue:
+				value.nData = (LONG)filter.operand;
+				break;
+			default:
+				if (!parameter(filter.operand, &value) && !parameter(filter.attributeId, &value)) {
+					XLS_LOG_DEBUG("session: query %u filter on 0x%08x skipped, the title passed no parameter 0x%08x.", procedureIndex, filter.attributeId, filter.operand);
+					continue;
+				}
+				break;
+		}
+		AddFilter(key, value, compare);
 	}
 }
 
@@ -574,6 +656,30 @@ void OnNewLaunchParameters()
 	SessionCheckLaunchInvite();
 }
 
+// Steam picks the new lobby owner itself, but some titles elect the host, so the lobby goes to
+// the member with the newest host claim.
+void SettleLobbyOwnership(Session& session)
+{
+	if (!session.lobby.IsValid() || session.deleted || !SteamReady()) {
+		return;
+	}
+	ISteamMatchmaking* matchmaking = SteamMatchmaking();
+	if (matchmaking->GetLobbyOwner(session.lobby) != SteamLocalId()) {
+		return;
+	}
+	if (session.host && session.pendingPublish) {
+		session.pendingPublish = false;
+		PublishSession(session);
+		XLS_LOG_INFO("session: lobby %llu is ours, migrated host data published.", session.lobby.ConvertToUint64());
+		return;
+	}
+	CSteamID claimant = NewestHostClaim(session.lobby, LobbyHostSeq(session.lobby), nullptr, nullptr);
+	if (claimant.IsValid() && claimant != SteamLocalId()) {
+		matchmaking->SetLobbyOwner(session.lobby, claimant);
+		XLS_LOG_INFO("session: handed lobby %llu to the migrated host %llu.", session.lobby.ConvertToUint64(), claimant.ConvertToUint64());
+	}
+}
+
 void OnLobbyChatUpdate(const LobbyChatUpdate_t& update)
 {
 	std::lock_guard<std::recursive_mutex> lock(g_mutex);
@@ -592,6 +698,7 @@ void OnLobbyChatUpdate(const LobbyChatUpdate_t& update)
 		if (!session->host && SteamMatchmaking()->GetLobbyOwner(session->lobby) == SteamLocalId()) {
 			XLS_LOG_INFO("session: this machine now owns lobby %llu.", update.m_ulSteamIDLobby);
 		}
+		SettleLobbyOwnership(*session);
 	}
 }
 
@@ -618,6 +725,22 @@ void OnLobbyDataUpdate(const LobbyDataUpdate_t& update)
 			}
 			session->maxPublic = (DWORD)strtoul(SteamMatchmaking()->GetLobbyData(lobby, Key("pub").c_str()), nullptr, 10);
 			session->maxPrivate = (DWORD)strtoul(SteamMatchmaking()->GetLobbyData(lobby, Key("priv").c_str()), nullptr, 10);
+		}
+		if (session) {
+			SettleLobbyOwnership(*session);
+		}
+	}
+	else {
+		// Member data changed: a host claim may have arrived.
+		std::shared_ptr<Session> session = FindByLobby(lobby);
+		if (session) {
+			if (!session->host) {
+				XSESSION_INFO info;
+				if (ReadSessionInfo(lobby, &info)) {
+					session->info = info;
+				}
+			}
+			SettleLobbyOwnership(*session);
 		}
 	}
 }
@@ -670,6 +793,7 @@ DWORD WINAPI XSessionCreate(DWORD dwFlags, DWORD dwUserIndex, DWORD dwMaxPublicS
 
 	if (session->host) {
 		session->nonce = ((uint64_t)GetTickCount64() << 24) ^ xls::SteamLocalId().ConvertToUint64();
+		session->hostSeq = HostClaimSeq();
 		xls::NetLocalXnaddr(&session->info.hostAddress);
 		xls::NetCreateKey(nullptr, &session->info.keyExchangeKey);
 		int maxMembers = (int)std::min<DWORD>(std::max<DWORD>(dwMaxPublicSlots + dwMaxPrivateSlots, 1), 250);
@@ -985,12 +1109,20 @@ DWORD WINAPI XSessionMigrateHost(HANDLE hSession, DWORD dwUserIndex, XSESSION_IN
 		session->host = true;
 		session->userIndex = dwUserIndex;
 		session->flags |= XSESSION_CREATE_HOST;
+		session->hostSeq = HostClaimSeq();
 		xls::NetLocalXnaddr(&session->info.hostAddress);
-		if (session->lobby.IsValid() && xls::SteamReady()) {
-			if (xls::SteamMatchmaking()->GetLobbyOwner(session->lobby) != xls::SteamLocalId()) {
-				xls::SteamMatchmaking()->SetLobbyOwner(session->lobby, xls::SteamLocalId());
+		if (session->lobby.IsValid() && !session->deleted && xls::SteamReady()) {
+			ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
+			std::string claim = xls::HexEncode(&session->info.hostAddress, sizeof(session->info.hostAddress)) + xls::FormatA("|%llu", session->hostSeq);
+			matchmaking->SetLobbyMemberData(session->lobby, Key("host").c_str(), claim.c_str());
+			if (matchmaking->GetLobbyOwner(session->lobby) == xls::SteamLocalId()) {
+				PublishSession(*session);
+				XLS_LOG_INFO("session: migrated to host of lobby %llu.", session->lobby.ConvertToUint64());
 			}
-			PublishSession(*session);
+			else {
+				session->pendingPublish = true;
+				XLS_LOG_INFO("session: migrated to host of lobby %llu, waiting for the lobby owner to hand it over.", session->lobby.ConvertToUint64());
+			}
 		}
 		*pSessionInfo = session->info;
 	}
@@ -1003,6 +1135,7 @@ DWORD WINAPI XSessionMigrateHost(HANDLE hSession, DWORD dwUserIndex, XSESSION_IN
 		if (xls::NetSteamIdFromXnaddr(session->info.hostAddress, &host)) {
 			xls::NetSecureAddrFor(host);
 		}
+		xls::events::SettleLobbyOwnership(*session);
 	}
 	return xls::OverlappedReturn(pOverlapped, ERROR_SUCCESS);
 }
