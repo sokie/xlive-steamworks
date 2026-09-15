@@ -57,6 +57,31 @@ BOOL WINAPI XlsSteamIdFromSecureAddr(IN_ADDR secureAddr, uint64_t* pSteamId64);
 // XNADDR for a Steam user, as XNetGetTitleXnAddr would produce it on that machine.
 void WINAPI XlsXnaddrFromSteamId(uint64_t steamId64, XNADDR* pxnaddr);
 
+typedef struct _XLS_CONNECTION_INFO {
+	DWORD dwState;          // ESteamNetworkingConnectionState
+	BOOL fRelayed;          // Traffic goes through a Steam relay (SDR) or a TURN server.
+	BOOL fDirect;           // A direct peer-to-peer path is in use.
+	DWORD dwPingMs;
+	float flQualityLocal;   // 0..1, packets delivered in order, measured here.
+	float flQualityRemote;  // 0..1, as measured by the peer.
+	DWORD dwFlags;          // k_nSteamNetworkConnectionInfoFlags_*
+	char szRelayPop[8];     // Relay data centre code, empty when direct.
+	char szRemotePop[8];    // Data centre nearest to the peer, when known.
+	char szRemoteAddr[48];  // Remote IP:port on a direct path, else empty.
+	char szDescription[128];
+} XLS_CONNECTION_INFO;
+
+// State of the datagram (UDP/VDP) session with the peer behind a secure address.
+BOOL WINAPI XlsPeerConnectionInfo(IN_ADDR secureAddr, XLS_CONNECTION_INFO* pInfo);
+// State of the connection behind a connected or accepted stream (TCP) socket.
+BOOL WINAPI XlsSocketConnectionInfo(SOCKET s, XLS_CONNECTION_INFO* pInfo);
+
+#define XLS_P2P_TRANSPORT_AUTO        0   // Direct when the NATs allow it, relay otherwise.
+#define XLS_P2P_TRANSPORT_RELAY_ONLY  1   // Never share IP addresses, every connection goes through a relay.
+// Selects how peer connections are made. Call before any XNet or XSocket traffic. The config
+// key "network": { "relay_only": true } does the same.
+void WINAPI XlsSetP2PTransport(DWORD dwMode);
+
 // --- Mappings ----------------------------------------------------------------------------------
 
 // Override the Steam API name of an achievement id or the leaderboard name of a stats view at run

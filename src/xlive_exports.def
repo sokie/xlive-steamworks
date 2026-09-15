@@ -295,6 +295,9 @@ EXPORTS
 	XlsSecureAddrFromSteamId @46030
 	XlsSteamIdFromSecureAddr @46031
 	XlsXnaddrFromSteamId @46032
+	XlsPeerConnectionInfo @46033
+	XlsSocketConnectionInfo @46034
+	XlsSetP2PTransport @46035
 	XlsSetAchievementName @46040
 	XlsSetLeaderboardName @46041
 	XlsGetAchievementName @46042

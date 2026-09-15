@@ -136,6 +136,21 @@ void WINAPI XlsXnaddrFromSteamId(uint64_t steamId64, XNADDR* pxnaddr)
 	}
 }
 
+BOOL WINAPI XlsPeerConnectionInfo(IN_ADDR secureAddr, XLS_CONNECTION_INFO* pInfo)
+{
+	return pInfo && xls::NetPeerConnectionInfo(secureAddr, pInfo) ? TRUE : FALSE;
+}
+
+BOOL WINAPI XlsSocketConnectionInfo(SOCKET s, XLS_CONNECTION_INFO* pInfo)
+{
+	return pInfo && xls::NetSocketConnectionInfo(s, pInfo) ? TRUE : FALSE;
+}
+
+void WINAPI XlsSetP2PTransport(DWORD dwMode)
+{
+	xls::NetSetP2PTransport(dwMode == XLS_P2P_TRANSPORT_RELAY_ONLY ? k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Disable : k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Default);
+}
+
 void WINAPI XlsSetAchievementName(DWORD achievementId, const char* apiName)
 {
 	std::lock_guard<std::mutex> lock(g_mutex);

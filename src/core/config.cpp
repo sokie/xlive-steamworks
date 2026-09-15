@@ -187,6 +187,7 @@ bool ConfigLoad()
 			config.lobbyKeyPrefix = sessions["lobby_key_prefix"].GetString("xl_");
 			config.lobbyDistanceFilter = (int)sessions["lobby_distance_filter"].GetInt(1);
 			config.sessionsAcceptAnyPeer = sessions["accept_any_peer"].GetBool(true);
+			config.relayOnly = root["network"]["relay_only"].GetBool(false);
 
 			const Json& presence = root["presence"];
 			config.richPresenceKey = presence["key"].GetString("status");
@@ -206,6 +207,7 @@ bool ConfigLoad()
 
 			config.voiceEnabled = root["voice"]["enabled"].GetBool(true);
 			config.nativeDialogs = root["ui"]["native_dialogs"].GetBool(true);
+			config.homeKeyOpensOverlay = root["ui"]["home_key_opens_overlay"].GetBool(true);
 		}
 		else {
 			g_config = config;

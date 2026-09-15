@@ -77,11 +77,15 @@
 		// { "name": "master", "ip": "203.0.113.10", "port": 27015, "service_id": 1, "info": "master" }
 	],
 
+	"network": {
+		"relay_only": false          // true: never share IP addresses, every peer connection goes through a Steam relay
+	},
 	"voice": {
 		"enabled": true
 	},
 
 	"ui": {
-		"native_dialogs": true    // Win32 dialogs for XShowKeyboardUI / XShowMessageBoxUI outside Big Picture
+		"native_dialogs": true,   // Win32 dialogs for XShowKeyboardUI / XShowMessageBoxUI outside Big Picture
+		"home_key_opens_overlay": true // Home opens the Steam overlay, as it opened the GFWL Guide
 	}
 }

@@ -78,6 +78,9 @@ struct Config {
 	bool sessionsAcceptAnyPeer = true;  // Accept SteamNetworkingMessages sessions from anyone.
 	uint32_t asyncTimeoutMs = 15000;
 
+	// Networking.
+	bool relayOnly = false;             // Never share IP addresses, every peer connection goes through a Steam relay.
+
 	// Presence.
 	std::string richPresenceKey = "status";
 	bool richPresenceSteamDisplay = true;
@@ -100,6 +103,7 @@ struct Config {
 
 	// UI.
 	bool nativeDialogs = true;          // Win32 fallbacks for keyboard and message box UI.
+	bool homeKeyOpensOverlay = true;    // GFWL opened the Guide on Home
 };
 
 bool ConfigLoad();
