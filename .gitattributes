@@ -2,3 +2,7 @@
 *.png binary
 *.dll binary
 *.lib binary
+
+# Windows scripts must be CRLF or cmd.exe mishandles labels.
+*.bat text eol=crlf
+*.cmd text eol=crlf
