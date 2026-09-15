@@ -130,7 +130,7 @@ set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/third-party/puff.c"
 
 option(XLS_BUILD_TESTS "Build the smoke test that drives xlive.dll against a running Steam client" OFF)
 if(XLS_BUILD_TESTS AND NOT XLS_BUILD_STATIC)
-    add_executable(xlive_smoke tests/smoke/smoke.cpp)
+    add_executable(xlive_smoke tests/smoke/smoke.cpp tests/smoke/pair.cpp)
     target_link_libraries(xlive_smoke PRIVATE xlive ws2_32)
     set_target_properties(xlive_smoke PROPERTIES
         CXX_STANDARD 17
