@@ -227,6 +227,10 @@ HRESULT WINAPI XLiveFreeLibrary(HMODULE hModule)
 BOOL WINAPI XLivePreTranslateMessage(const MSG* pMsg)
 {
 	xls::SteamPump();
+	if (pMsg && pMsg->message == WM_KEYDOWN && pMsg->wParam == VK_HOME && !(pMsg->lParam & 0x40000000) && xls::Cfg().homeKeyOpensOverlay) {
+		XShowGuideUI(0);
+		return TRUE;
+	}
 	return FALSE;
 }
 
