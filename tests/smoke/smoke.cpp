@@ -92,6 +92,27 @@ static void TestAchievements()
 	}
 	XCloseHandle(enumerator);
 	printf("       (achievement %u maps to Steam API name %s)\n", 1, XlsGetAchievementName(1));
+
+	// An id the app has no Steam achievement for still unlocks through the local record.
+	XUSER_ACHIEVEMENT unlock = { 0, 1 };
+	XOVERLAPPED overlapped = {};
+	result = XUserWriteAchievements(1, &unlock, &overlapped);
+	CHECK(result == ERROR_IO_PENDING && Wait(&overlapped) == ERROR_SUCCESS, "XUserWriteAchievements id 1");
+	result = XUserCreateAchievementEnumerator(0, 0, INVALID_XUID, XACHIEVEMENT_DETAILS_ALL, 0, 32, &bufferSize, &enumerator);
+	if (result == ERROR_SUCCESS) {
+		std::vector<uint8_t> again(bufferSize);
+		DWORD countAgain = 0;
+		XEnumerate(enumerator, again.data(), bufferSize, &countAgain, nullptr);
+		XACHIEVEMENT_DETAILS* list = (XACHIEVEMENT_DETAILS*)again.data();
+		bool unlocked = false;
+		for (DWORD i = 0; i < countAgain; i++) {
+			if (list[i].dwId == 1 && (list[i].dwFlags & XACHIEVEMENT_DETAILS_ACHIEVED)) {
+				unlocked = true;
+			}
+		}
+		CHECK(unlocked || countAgain == 0, "achievement 1 reads back as unlocked (%u listed)", countAgain);
+		XCloseHandle(enumerator);
+	}
 }
 
 static void TestProfile()

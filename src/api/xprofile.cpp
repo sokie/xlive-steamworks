@@ -1,5 +1,6 @@
 // #5273, #5274, #5282, #5331, #5337, #5339: profile settings live in one per-user cloud file.
 #include "xlive/xfuncs.h"
+#include "api/xachievements.h"
 #include "api/xlive.h"
 
 #include "core/cloud.h"
@@ -102,12 +103,11 @@ void TitleCredSummary(DWORD* cred, DWORD* earned)
 {
 	*cred = 0;
 	*earned = 0;
-	if (!xls::SteamReady() || !xls::spa::Loaded()) {
+	if (!xls::spa::Loaded()) {
 		return;
 	}
 	for (const xls::spa::Achievement& achievement : xls::spa::Achievements()) {
-		bool achieved = false;
-		if (xls::SteamUserStats()->GetAchievement(xls::AchievementApiName(achievement.id).c_str(), &achieved) && achieved) {
+		if (xls::AchievementUnlocked(achievement.id, nullptr)) {
 			*cred += achievement.cred;
 			(*earned)++;
 		}

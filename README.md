@@ -78,7 +78,7 @@ nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
 | --- | --- | --- |
 | Init, render, input, overlapped, enumerators, notifications | done | `SteamAPI_RunCallbacks` pump, `GameOverlayActivated_t` -> `XN_SYS_UI` |
 | Users, sign-in, privileges, contexts, properties | done | `ISteamUser`, `ISteamFriends` (persona), rich presence |
-| Achievements (write, enumerate, pictures) | done | `ISteamUserStats` achievements, SPA for text and art |
+| Achievements (write, enumerate, pictures) | done | `ISteamUserStats` achievements, SPA for text and art, per-user record when the app has no Steam achievement schema |
 | Profile settings | done | one Steam Cloud file, defaults from Steam for the read-only ones |
 | Title managed storage (`XStorage*`) | done | Steam Cloud per user, shipped folder per title |
 | Friends, presence, invites | done | `ISteamFriends`, lobby invites, `+connect_lobby` |

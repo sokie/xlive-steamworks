@@ -1,7 +1,9 @@
 // #5278, #5279, #5280 Achievements: text and art come from the SPA, the unlock state from Steam.
 #include "xlive/xfuncs.h"
+#include "api/xachievements.h"
 #include "api/xlive.h"
 
+#include "core/cloud.h"
 #include "core/config.h"
 #include "core/enumerator.h"
 #include "core/image.h"
@@ -20,6 +22,60 @@ namespace {
 std::mutex g_mutex;
 std::set<uint64_t> g_statsReceived;
 
+const char* kLocalFile = "xlive/achievements.bin";
+const uint32_t kLocalMagic = 0x41534C58; // 'XLSA'
+bool g_localLoaded = false;
+std::map<uint32_t, uint64_t> g_localUnlocks; // id -> unix time
+
+void LoadLocal()
+{
+	if (g_localLoaded) {
+		return;
+	}
+	g_localLoaded = true;
+	std::vector<uint8_t> data;
+	if (!xls::CloudRead(kLocalFile, data) || data.size() < 4) {
+		return;
+	}
+	uint32_t magic;
+	memcpy(&magic, data.data(), 4);
+	if (magic != kLocalMagic) {
+		return;
+	}
+	for (size_t offset = 4; offset + 12 <= data.size(); offset += 12) {
+		uint32_t id;
+		uint64_t time;
+		memcpy(&id, data.data() + offset, 4);
+		memcpy(&time, data.data() + offset + 4, 8);
+		g_localUnlocks[id] = time;
+	}
+}
+
+bool SaveLocal()
+{
+	std::vector<uint8_t> data;
+	data.insert(data.end(), (const uint8_t*)&kLocalMagic, (const uint8_t*)&kLocalMagic + 4);
+	for (const auto& entry : g_localUnlocks) {
+		data.insert(data.end(), (const uint8_t*)&entry.first, (const uint8_t*)&entry.first + 4);
+		data.insert(data.end(), (const uint8_t*)&entry.second, (const uint8_t*)&entry.second + 8);
+	}
+	return xls::CloudWrite(kLocalFile, data.data(), data.size());
+}
+
+bool LocalUnlocked(uint32_t id, uint64_t* time)
+{
+	std::lock_guard<std::mutex> lock(g_mutex);
+	LoadLocal();
+	auto it = g_localUnlocks.find(id);
+	if (it == g_localUnlocks.end()) {
+		return false;
+	}
+	if (time) {
+		*time = it->second;
+	}
+	return true;
+}
+
 struct AchievementRecord {
 	XACHIEVEMENT_DETAILS details;
 	std::wstring label;
@@ -33,17 +89,21 @@ std::vector<AchievementRecord> BuildList(CSteamID user, bool local)
 	std::vector<AchievementRecord> records;
 	ISteamUserStats* stats = xls::SteamReady() ? xls::SteamUserStats() : nullptr;
 
-	auto unlockState = [&](const std::string& apiName, bool* achieved, uint32* unlockTime) {
+	auto unlockState = [&](uint32_t id, const std::string& apiName, bool* achieved, uint32* unlockTime) {
 		*achieved = false;
 		*unlockTime = 0;
-		if (!stats) {
-			return;
+		if (stats) {
+			if (local) {
+				stats->GetAchievementAndUnlockTime(apiName.c_str(), achieved, unlockTime);
+			}
+			else {
+				stats->GetUserAchievementAndUnlockTime(user, apiName.c_str(), achieved, unlockTime);
+			}
 		}
-		if (local) {
-			stats->GetAchievementAndUnlockTime(apiName.c_str(), achieved, unlockTime);
-		}
-		else {
-			stats->GetUserAchievementAndUnlockTime(user, apiName.c_str(), achieved, unlockTime);
+		uint64_t localTime = 0;
+		if (!*achieved && local && xls::Cfg().achievementsLocalFallback && LocalUnlocked(id, &localTime)) {
+			*achieved = true;
+			*unlockTime = (uint32)localTime;
 		}
 	};
 
@@ -59,7 +119,7 @@ std::vector<AchievementRecord> BuildList(CSteamID user, bool local)
 			record.unachieved = xls::spa::String(spaAchievement.unachievedId);
 			bool achieved = false;
 			uint32 unlockTime = 0;
-			unlockState(xls::AchievementApiName(spaAchievement.id), &achieved, &unlockTime);
+			unlockState(spaAchievement.id, xls::AchievementApiName(spaAchievement.id), &achieved, &unlockTime);
 			if (achieved) {
 				record.details.dwFlags |= XACHIEVEMENT_DETAILS_ACHIEVED | XACHIEVEMENT_DETAILS_ACHIEVED_ONLINE;
 				record.details.ftAchieved = xls::UnixTimeToFileTime(unlockTime);
@@ -90,7 +150,7 @@ std::vector<AchievementRecord> BuildList(CSteamID user, bool local)
 		record.unachieved = record.description;
 		bool achieved = false;
 		uint32 unlockTime = 0;
-		unlockState(apiName, &achieved, &unlockTime);
+		unlockState(i + 1, apiName, &achieved, &unlockTime);
 		if (achieved) {
 			record.details.dwFlags |= XACHIEVEMENT_DETAILS_ACHIEVED | XACHIEVEMENT_DETAILS_ACHIEVED_ONLINE;
 			record.details.ftAchieved = xls::UnixTimeToFileTime(unlockTime);
@@ -173,6 +233,22 @@ public:
 }
 
 namespace xls {
+
+bool AchievementUnlocked(uint32_t achievementId, uint64_t* unixTime)
+{
+	if (SteamReady()) {
+		bool achieved = false;
+		uint32 time = 0;
+		if (SteamUserStats()->GetAchievementAndUnlockTime(AchievementApiName(achievementId).c_str(), &achieved, &time) && achieved) {
+			if (unixTime) {
+				*unixTime = time;
+			}
+			return true;
+		}
+	}
+	return Cfg().achievementsLocalFallback && LocalUnlocked(achievementId, unixTime);
+}
+
 namespace events {
 
 void OnUserStatsReceived(const UserStatsReceived_t& received)
@@ -200,32 +276,48 @@ DWORD WINAPI XUserWriteAchievements(DWORD dwNumAchievements, const XUSER_ACHIEVE
 			return ERROR_NO_SUCH_USER;
 		}
 	}
-	if (!xls::SteamReady()) {
+	if (!xls::SteamReady() && !xls::Cfg().achievementsLocalFallback) {
 		return xls::OverlappedReturn(pOverlapped, ERROR_NOT_LOGGED_ON);
 	}
 	bool anySet = false;
+	bool anyLocal = false;
 	for (DWORD i = 0; i < dwNumAchievements; i++) {
 		if (pAchievements[i].dwUserIndex != 0) {
 			// Only the Steam user has an account so extra local players earn nothing.
 			continue;
 		}
-		std::string apiName = xls::AchievementApiName(pAchievements[i].dwAchievementId);
+		uint32_t id = pAchievements[i].dwAchievementId;
+		std::string apiName = xls::AchievementApiName(id);
 		bool achieved = false;
-		xls::SteamUserStats()->GetAchievement(apiName.c_str(), &achieved);
-		if (achieved) {
-			XLS_LOG_DEBUG("achievements: %u (%s) is already unlocked.", pAchievements[i].dwAchievementId, apiName.c_str());
+		if (xls::SteamReady() && xls::SteamUserStats()->GetAchievement(apiName.c_str(), &achieved) && achieved) {
+			XLS_LOG_DEBUG("achievements: %u (%s) is already unlocked.", id, apiName.c_str());
 			continue;
 		}
-		if (xls::SteamUserStats()->SetAchievement(apiName.c_str())) {
-			XLS_LOG_INFO("achievements: unlocked %u as %s.", pAchievements[i].dwAchievementId, apiName.c_str());
+		if (xls::SteamReady() && xls::SteamUserStats()->SetAchievement(apiName.c_str())) {
+			XLS_LOG_INFO("achievements: unlocked %u as %s.", id, apiName.c_str());
 			anySet = true;
+			continue;
 		}
-		else {
-			XLS_LOG_ERROR("achievements: SetAchievement(%s) failed for id %u, check that the API name exists on Steamworks.", apiName.c_str(), pAchievements[i].dwAchievementId);
+		if (!xls::Cfg().achievementsLocalFallback) {
+			XLS_LOG_ERROR("achievements: SetAchievement(%s) failed for id %u, check that the API name exists on Steamworks.", apiName.c_str(), id);
+			continue;
+		}
+		// An app with no Steam achievement of that name keeps the unlock per user, so the title's own
+		// achievement screen still shows it.
+		std::lock_guard<std::mutex> lock(g_mutex);
+		LoadLocal();
+		if (!g_localUnlocks.count(id)) {
+			g_localUnlocks[id] = xls::FileTimeToUnixTime(xls::NowFileTime());
+			anyLocal = true;
+			XLS_LOG_INFO("achievements: %u (%s) is not a Steam achievement of this app, recorded locally.", id, apiName.c_str());
 		}
 	}
 	if (anySet) {
 		xls::SteamUserStats()->StoreStats();
+	}
+	if (anyLocal) {
+		std::lock_guard<std::mutex> lock(g_mutex);
+		SaveLocal();
 	}
 	return xls::OverlappedReturn(pOverlapped, ERROR_SUCCESS);
 }
