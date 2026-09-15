@@ -5,28 +5,17 @@
 #include "core/steam.h"
 #include "core/utils.h"
 
+#include <set>
+
 namespace xls {
 
 namespace {
 
+bool g_writeFailureLogged = false;
+
 bool UseSteamCloud()
 {
 	return Cfg().cloudEnabled && SteamReady() && SteamRemoteStorage() && SteamRemoteStorage()->IsCloudEnabledForAccount() && SteamRemoteStorage()->IsCloudEnabledForApp();
-}
-
-std::wstring LocalPath(const std::string& name)
-{
-	std::wstring path = Cfg().localStorageDir;
-	if (SteamReady()) {
-		path += FormatW(L"%u\\", SteamLocalId().GetAccountID());
-	}
-	std::wstring relative = Utf8ToWide(name.c_str());
-	for (wchar_t& c : relative) {
-		if (c == L'/') {
-			c = L'\\';
-		}
-	}
-	return path + relative;
 }
 
 std::wstring LocalRoot()
@@ -36,6 +25,27 @@ std::wstring LocalRoot()
 		path += FormatW(L"%u\\", SteamLocalId().GetAccountID());
 	}
 	return path;
+}
+
+std::wstring LocalPath(const std::string& name)
+{
+	std::wstring relative = Utf8ToWide(name.c_str());
+	for (wchar_t& c : relative) {
+		if (c == L'/') {
+			c = L'\\';
+		}
+	}
+	return LocalRoot() + relative;
+}
+
+bool LocalWrite(const std::string& name, const void* data, size_t size)
+{
+	std::wstring path = LocalPath(name);
+	size_t slash = path.find_last_of(L'\\');
+	if (slash != std::wstring::npos) {
+		EnsureDirectory(path.substr(0, slash + 1));
+	}
+	return WriteFileBytes(path, data, size);
 }
 
 void ListLocal(const std::wstring& directory, const std::string& relativePrefix, std::vector<CloudFileInfo>& out)
@@ -64,6 +74,11 @@ void ListLocal(const std::wstring& directory, const std::string& relativePrefix,
 	FindClose(handle);
 }
 
+bool SteamHas(const std::string& name)
+{
+	return UseSteamCloud() && SteamRemoteStorage()->FileExists(name.c_str());
+}
+
 }
 
 bool CloudAvailable()
@@ -73,33 +88,21 @@ bool CloudAvailable()
 
 bool CloudExists(const std::string& name)
 {
-	if (UseSteamCloud()) {
-		return SteamRemoteStorage()->FileExists(name.c_str());
-	}
-	return FileExists(LocalPath(name));
+	return SteamHas(name) || FileExists(LocalPath(name));
 }
 
 bool CloudRead(const std::string& name, std::vector<uint8_t>& data)
 {
-	if (UseSteamCloud()) {
-		if (!SteamRemoteStorage()->FileExists(name.c_str())) {
-			return false;
-		}
+	if (SteamHas(name)) {
 		int32 size = SteamRemoteStorage()->GetFileSize(name.c_str());
-		if (size < 0) {
-			return false;
-		}
-		data.resize((size_t)size);
-		if (size == 0) {
-			return true;
-		}
-		int32 read = SteamRemoteStorage()->FileRead(name.c_str(), data.data(), size);
-		if (read != size) {
+		if (size >= 0) {
+			data.resize((size_t)size);
+			int32 read = size ? SteamRemoteStorage()->FileRead(name.c_str(), data.data(), size) : 0;
+			if (read == size) {
+				return true;
+			}
 			XLS_LOG_WARN("cloud: read %d of %d bytes of %s.", read, size, name.c_str());
-			data.resize(read > 0 ? (size_t)read : 0);
-			return read > 0;
 		}
-		return true;
 	}
 	return ReadFileBytes(LocalPath(name), data);
 }
@@ -107,31 +110,36 @@ bool CloudRead(const std::string& name, std::vector<uint8_t>& data)
 bool CloudWrite(const std::string& name, const void* data, size_t size)
 {
 	if (UseSteamCloud()) {
-		if (!SteamRemoteStorage()->FileWrite(name.c_str(), data, (int32)size)) {
-			XLS_LOG_WARN("cloud: FileWrite %s (%zu bytes) failed, check the app's Cloud quota and file limits.", name.c_str(), size);
-			return false;
+		if (SteamRemoteStorage()->FileWrite(name.c_str(), data, (int32)size)) {
+			return true;
 		}
-		return true;
+		// An app can have Cloud on for its auto-cloud folders but no API quota, so the file stays local.
+		if (!g_writeFailureLogged) {
+			uint64 total = 0;
+			uint64 available = 0;
+			bool quota = SteamRemoteStorage()->GetQuota(&total, &available);
+			XLS_LOG_WARN("cloud: FileWrite %s (%zu bytes) refused (quota %s: %llu total, %llu free), files go to %ls from now on.", name.c_str(), size, quota ? "known" : "unavailable", total, available, LocalRoot().c_str());
+			g_writeFailureLogged = true;
+		}
 	}
-	std::wstring path = LocalPath(name);
-	size_t slash = path.find_last_of(L'\\');
-	if (slash != std::wstring::npos) {
-		EnsureDirectory(path.substr(0, slash + 1));
-	}
-	return WriteFileBytes(path, data, size);
+	return LocalWrite(name, data, size);
 }
 
 bool CloudDelete(const std::string& name)
 {
-	if (UseSteamCloud()) {
-		return SteamRemoteStorage()->FileDelete(name.c_str());
+	bool deleted = false;
+	if (SteamHas(name)) {
+		deleted = SteamRemoteStorage()->FileDelete(name.c_str());
 	}
-	return DeleteFileW(LocalPath(name).c_str()) != FALSE;
+	if (DeleteFileW(LocalPath(name).c_str())) {
+		deleted = true;
+	}
+	return deleted;
 }
 
 int64_t CloudTimestamp(const std::string& name)
 {
-	if (UseSteamCloud()) {
+	if (SteamHas(name)) {
 		return SteamRemoteStorage()->GetFileTimestamp(name.c_str());
 	}
 	WIN32_FILE_ATTRIBUTE_DATA attributes;
@@ -144,6 +152,7 @@ int64_t CloudTimestamp(const std::string& name)
 std::vector<CloudFileInfo> CloudList(const std::string& prefix)
 {
 	std::vector<CloudFileInfo> result;
+	std::set<std::string> seen;
 	if (UseSteamCloud()) {
 		int32 count = SteamRemoteStorage()->GetFileCount();
 		for (int32 i = 0; i < count; i++) {
@@ -157,13 +166,13 @@ std::vector<CloudFileInfo> CloudList(const std::string& prefix)
 			info.size = size;
 			info.timestamp = SteamRemoteStorage()->GetFileTimestamp(name);
 			result.push_back(info);
+			seen.insert(info.name);
 		}
-		return result;
 	}
-	std::vector<CloudFileInfo> all;
-	ListLocal(LocalRoot(), std::string(), all);
-	for (const CloudFileInfo& info : all) {
-		if (info.name.compare(0, prefix.size(), prefix) == 0) {
+	std::vector<CloudFileInfo> local;
+	ListLocal(LocalRoot(), std::string(), local);
+	for (const CloudFileInfo& info : local) {
+		if (info.name.compare(0, prefix.size(), prefix) == 0 && !seen.count(info.name)) {
 			result.push_back(info);
 		}
 	}

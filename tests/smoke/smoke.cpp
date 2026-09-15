@@ -1,13 +1,21 @@
 // Drives xlive.dll through the paths a title uses in its first minutes, against a live Steam
 // client. Run with steam_appid.txt next to the exe, app 480 (Spacewar) is for testing only.
+//
+//   xlive_smoke.exe [--probe] [--spa Game.exe]
+//
+// --probe reports what the app on Steam offers and touches nothing that persists on the app:
+// no leaderboard is created and no achievement is written.
 #include "xlive/xfuncs.h"
 #include "xlive/xlive_steamworks.h"
+
+#include <steam/steam_api.h>
 
 #include <stdio.h>
 #include <string>
 #include <vector>
 
 static int g_failures = 0;
+static bool g_probe = false;
 
 #define CHECK(condition, ...) \
 	do { \
@@ -16,6 +24,13 @@ static int g_failures = 0;
 		printf(__VA_ARGS__); \
 		printf("\n"); \
 		if (!ok_) g_failures++; \
+	} while (0)
+
+#define INFO(...) \
+	do { \
+		printf("[info] "); \
+		printf(__VA_ARGS__); \
+		printf("\n"); \
 	} while (0)
 
 static void Pump(int frames)
@@ -39,6 +54,80 @@ static DWORD Wait(XOVERLAPPED* overlapped, DWORD timeoutMs = 20000)
 	DWORD result = 0;
 	XGetOverlappedResult(overlapped, &result, FALSE);
 	return (DWORD)overlapped->InternalLow;
+}
+
+// Waits for a Steam call from the wrapper's pump since the test has no callback loop of its own.
+template <typename T>
+static bool WaitSteamCall(SteamAPICall_t call, T* result)
+{
+	bool failed = false;
+	for (int i = 0; i < 1500; i++) {
+		XLiveRender();
+		if (SteamUtils()->IsAPICallCompleted(call, &failed)) {
+			if (failed) {
+				return false;
+			}
+			return SteamUtils()->GetAPICallResult(call, result, sizeof(T), T::k_iCallback, &failed) && !failed;
+		}
+		Sleep(10);
+	}
+	return false;
+}
+
+static void SteamSummary()
+{
+	// Stats and the relay configuration arrive a moment after init so give them a few seconds.
+	for (int i = 0; i < 500; i++) {
+		SteamRelayNetworkStatus_t relay = {};
+		bool relayReady = SteamNetworkingUtils()->GetRelayNetworkStatus(&relay) == k_ESteamNetworkingAvailability_Current;
+		bool statsReady = SteamUserStats()->GetNumAchievements() > 0;
+		if (relayReady && (statsReady || i >= 300)) {
+			break;
+		}
+		XLiveRender();
+		Sleep(10);
+	}
+	AppId_t appId = SteamUtils()->GetAppID();
+	INFO("app id %u, Steam user %llu \"%s\", logged on %d, language %s", appId, SteamUser()->GetSteamID().ConvertToUint64(), SteamFriends()->GetPersonaName(), (int)SteamUser()->BLoggedOn(), SteamApps()->GetCurrentGameLanguage());
+	INFO("owns app: subscribed %d, subscribed app %d, build id %d", (int)SteamApps()->BIsSubscribed(), (int)SteamApps()->BIsSubscribedApp(appId), SteamApps()->GetAppBuildId());
+	INFO("overlay enabled %d, big picture %d, steam hardware %d", (int)SteamUtils()->IsOverlayEnabled(), (int)SteamUtils()->IsSteamInBigPictureMode(), (int)SteamUtils()->IsRunningOnSteamHardware());
+	INFO("cloud: account %d, app %d", (int)SteamRemoteStorage()->IsCloudEnabledForAccount(), (int)SteamRemoteStorage()->IsCloudEnabledForApp());
+	uint64 quotaTotal = 0;
+	uint64 quotaFree = 0;
+	if (SteamRemoteStorage()->GetQuota(&quotaTotal, &quotaFree)) {
+		INFO("cloud quota: %llu bytes total, %llu free", quotaTotal, quotaFree);
+	}
+	else {
+		INFO("cloud quota: not reported, API writes are likely refused and the wrapper keeps files next to the exe");
+	}
+	uint32 achievements = SteamUserStats()->GetNumAchievements();
+	INFO("steam achievements defined for this app: %u", achievements);
+	for (uint32 i = 0; i < achievements && i < 5; i++) {
+		const char* name = SteamUserStats()->GetAchievementName(i);
+		INFO("   %s = \"%s\"", name, SteamUserStats()->GetAchievementDisplayAttribute(name, "name"));
+	}
+	int dlcCount = SteamApps()->GetDLCCount();
+	INFO("dlc apps listed for this app: %d", dlcCount);
+	for (int i = 0; i < dlcCount && i < 70; i++) {
+		AppId_t dlc = 0;
+		bool available = false;
+		char name[128] = {};
+		if (SteamApps()->BGetDLCDataByIndex(i, &dlc, &available, name, sizeof(name))) {
+			INFO("   %u \"%s\" available %d installed %d owned %d", dlc, name, (int)available, (int)SteamApps()->BIsDlcInstalled(dlc), (int)SteamApps()->BIsSubscribedApp(dlc));
+		}
+	}
+	SteamRelayNetworkStatus_t relay = {};
+	ESteamNetworkingAvailability availability = SteamNetworkingUtils()->GetRelayNetworkStatus(&relay);
+	INFO("relay network: availability %d, config %d, any relay %d (%s)", (int)availability, (int)relay.m_eAvailNetworkConfig, (int)relay.m_eAvailAnyRelay, relay.m_debugMsg);
+
+	SteamAPICall_t call = SteamUserStats()->FindLeaderboard("LB_1");
+	LeaderboardFindResult_t found = {};
+	if (WaitSteamCall(call, &found) && found.m_bLeaderboardFound) {
+		INFO("leaderboard LB_1 exists on this app (%d entries)", SteamUserStats()->GetLeaderboardEntryCount(found.m_hSteamLeaderboard));
+	}
+	else {
+		INFO("leaderboard LB_1 does not exist on this app, the first XSessionWriteStats creates it when leaderboards.create_if_missing is on");
+	}
 }
 
 static void TestNotifications(HANDLE listener)
@@ -92,6 +181,9 @@ static void TestAchievements()
 	}
 	XCloseHandle(enumerator);
 	printf("       (achievement %u maps to Steam API name %s)\n", 1, XlsGetAchievementName(1));
+	if (g_probe) {
+		return;
+	}
 
 	// An id the app has no Steam achievement for still unlocks through the local record.
 	XUSER_ACHIEVEMENT unlock = { 0, 1 };
@@ -235,7 +327,6 @@ static void TestNetworkAndSession()
 	result = XSessionGetDetails(session, &detailsSize, details, nullptr);
 	CHECK(result == ERROR_SUCCESS && details->dwActualMemberCount >= 1 && details->dwMaxPublicSlots == 4, "XSessionGetDetails: %u member(s), state %d, host index %u", details->dwActualMemberCount, details->eState, details->dwUserIndexHost);
 
-	XSESSION_INFO byId = {};
 	DWORD searchSize = 0;
 	result = XSessionSearchByID(info.sessionID, 0, &searchSize, nullptr, nullptr);
 	std::vector<uint8_t> searchBuffer(searchSize);
@@ -246,42 +337,51 @@ static void TestNetworkAndSession()
 		XSESSION_SEARCHRESULT& found = header->pResults[0];
 		CHECK(memcmp(&found.info.keyExchangeKey, &info.keyExchangeKey, sizeof(XNKEY)) == 0, "search result carries the XNKEY");
 		CHECK(found.cContexts >= 2, "search result carries %u context(s), %u propert(ies)", found.cContexts, found.cProperties);
-		byId = found.info;
 	}
 
-	XSESSION_VIEW_PROPERTIES view = {};
-	XUSER_PROPERTY properties[2] = {};
-	properties[0].dwPropertyId = XPROPERTYID(0, XUSER_DATA_TYPE_INT32, 1);
-	properties[0].value.type = XUSER_DATA_TYPE_INT32;
-	properties[0].value.nData = 1234;
-	properties[1].dwPropertyId = XPROPERTYID(0, XUSER_DATA_TYPE_INT64, 2);
-	properties[1].value.type = XUSER_DATA_TYPE_INT64;
-	properties[1].value.i64Data = 5678;
-	view.dwViewId = 1;
-	view.dwNumProperties = 2;
-	view.pProperties = properties;
-	XUID xuid = 0;
-	XUserGetXUID(0, &xuid);
-	result = XSessionWriteStats(session, xuid, 1, &view, nullptr);
-	CHECK(result == ERROR_SUCCESS, "XSessionWriteStats view 1 (score 1234, detail 5678)");
-	Pump(300);
+	// A public search from the same client hides its own lobby, this checks the request itself.
+	DWORD listSize = 0;
+	result = XSessionSearch(0, 0, 10, 0, 0, nullptr, nullptr, &listSize, nullptr, nullptr);
+	std::vector<uint8_t> listBuffer(listSize);
+	XSESSION_SEARCHRESULT_HEADER* list = (XSESSION_SEARCHRESULT_HEADER*)listBuffer.data();
+	result = XSessionSearch(0, 0, 10, 0, 0, nullptr, nullptr, &listSize, list, nullptr);
+	CHECK(result == ERROR_SUCCESS, "XSessionSearch -> %u other session(s) of this title", list->dwSearchResults);
 
-	XUSER_STATS_SPEC spec = {};
-	spec.dwViewId = 1;
-	spec.dwNumColumnIds = 2;
-	spec.rgwColumnIds[0] = 1;
-	spec.rgwColumnIds[1] = 2;
-	DWORD statsSize = 0;
-	result = XUserReadStats(0, 1, &xuid, 1, &spec, &statsSize, nullptr, nullptr);
-	std::vector<uint8_t> statsBuffer(statsSize);
-	XUSER_STATS_READ_RESULTS* stats = (XUSER_STATS_READ_RESULTS*)statsBuffer.data();
-	result = XUserReadStats(0, 1, &xuid, 1, &spec, &statsSize, stats, nullptr);
-	CHECK(result == ERROR_SUCCESS && stats->dwNumViews == 1 && stats->pViews[0].dwNumRows == 1, "XUserReadStats -> %u", result);
-	if (result == ERROR_SUCCESS && stats->dwNumViews == 1 && stats->pViews[0].dwNumRows == 1) {
-		XUSER_STATS_ROW& row = stats->pViews[0].pRows[0];
-		printf("       rank %u rating %lld gamertag %s columns %u: %d, %lld\n", row.dwRank, row.i64Rating, row.szGamertag, row.dwNumColumns,
-			row.dwNumColumns > 0 ? row.pColumns[0].Value.nData : 0, row.dwNumColumns > 1 ? row.pColumns[1].Value.i64Data : 0);
-		CHECK(row.dwRank >= 1 && row.i64Rating >= 1234, "leaderboard LB_1 holds our score");
+	if (!g_probe) {
+		XSESSION_VIEW_PROPERTIES view = {};
+		XUSER_PROPERTY properties[2] = {};
+		properties[0].dwPropertyId = XPROPERTYID(0, XUSER_DATA_TYPE_INT32, 1);
+		properties[0].value.type = XUSER_DATA_TYPE_INT32;
+		properties[0].value.nData = 1234;
+		properties[1].dwPropertyId = XPROPERTYID(0, XUSER_DATA_TYPE_INT64, 2);
+		properties[1].value.type = XUSER_DATA_TYPE_INT64;
+		properties[1].value.i64Data = 5678;
+		view.dwViewId = 1;
+		view.dwNumProperties = 2;
+		view.pProperties = properties;
+		XUID xuid = 0;
+		XUserGetXUID(0, &xuid);
+		result = XSessionWriteStats(session, xuid, 1, &view, nullptr);
+		CHECK(result == ERROR_SUCCESS, "XSessionWriteStats view 1 (score 1234, detail 5678)");
+		Pump(300);
+
+		XUSER_STATS_SPEC spec = {};
+		spec.dwViewId = 1;
+		spec.dwNumColumnIds = 2;
+		spec.rgwColumnIds[0] = 1;
+		spec.rgwColumnIds[1] = 2;
+		DWORD statsSize = 0;
+		result = XUserReadStats(0, 1, &xuid, 1, &spec, &statsSize, nullptr, nullptr);
+		std::vector<uint8_t> statsBuffer(statsSize);
+		XUSER_STATS_READ_RESULTS* stats = (XUSER_STATS_READ_RESULTS*)statsBuffer.data();
+		result = XUserReadStats(0, 1, &xuid, 1, &spec, &statsSize, stats, nullptr);
+		CHECK(result == ERROR_SUCCESS && stats->dwNumViews == 1 && stats->pViews[0].dwNumRows == 1, "XUserReadStats -> %u", result);
+		if (result == ERROR_SUCCESS && stats->dwNumViews == 1 && stats->pViews[0].dwNumRows == 1) {
+			XUSER_STATS_ROW& row = stats->pViews[0].pRows[0];
+			printf("       rank %u rating %lld gamertag %s columns %u: %d, %lld\n", row.dwRank, row.i64Rating, row.szGamertag, row.dwNumColumns,
+				row.dwNumColumns > 0 ? row.pColumns[0].Value.nData : 0, row.dwNumColumns > 1 ? row.pColumns[1].Value.i64Data : 0);
+			CHECK(row.dwRank >= 1 && row.i64Rating >= 1234, "leaderboard LB_1 holds our score");
+		}
 	}
 
 	CHECK(XSessionDelete(session, nullptr) == ERROR_SUCCESS, "XSessionDelete");
@@ -303,34 +403,56 @@ static void TestFriends()
 	result = XEnumerate(enumerator, buffer.data(), bufferSize, &count, nullptr);
 	CHECK(result == ERROR_SUCCESS || result == ERROR_NO_MORE_FILES, "XEnumerate friends -> %u friend(s)", count);
 	XONLINE_FRIEND* friends = (XONLINE_FRIEND*)buffer.data();
-	for (DWORD i = 0; i < count && i < 3; i++) {
+	for (DWORD i = 0; i < count && i < 3 && !g_probe; i++) {
 		printf("       %s state 0x%08x \"%ls\"\n", friends[i].szGamertag, friends[i].dwFriendState, friends[i].wszRichPresence);
 	}
 	XCloseHandle(enumerator);
 }
 
+// The probe leaves nothing behind in the user's cloud for the app.
+static void ProbeCleanup()
+{
+	if (SteamRemoteStorage()->IsCloudEnabledForApp()) {
+		SteamRemoteStorage()->FileDelete("xlive/profile.bin");
+		SteamRemoteStorage()->FileDelete("xlive/achievements.bin");
+	}
+}
+
 int main(int argc, char** argv)
 {
-	printf("xlive-steamworks smoke test, wrapper %s\n", XlsVersion());
+	const char* spaModule = nullptr;
+	for (int i = 1; i < argc; i++) {
+		if (strcmp(argv[i], "--probe") == 0) {
+			g_probe = true;
+		}
+		else if (strcmp(argv[i], "--spa") == 0 && i + 1 < argc) {
+			spaModule = argv[++i];
+		}
+	}
+
+	printf("xlive-steamworks %s %s\n", g_probe ? "probe" : "smoke test", XlsVersion());
 	XLIVE_INITIALIZE_INFO init = {};
 	init.cbSize = sizeof(init);
 	HRESULT hr = XLiveInitialize(&init);
 	CHECK(hr == S_OK, "XLiveInitialize -> 0x%08x", hr);
-	if (argc > 2 && strcmp(argv[1], "--spa") == 0) {
+	if (spaModule) {
 		// A GFWL exe's SPA, so the achievement list below comes from a real title.
-		HMODULE module = LoadLibraryExA(argv[2], nullptr, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
-		CHECK(module && XlsLoadSpaFromModule(module, 0), "XlsLoadSpaFromModule(%s)", argv[2]);
+		HMODULE module = LoadLibraryExA(spaModule, nullptr, LOAD_LIBRARY_AS_DATAFILE | LOAD_LIBRARY_AS_IMAGE_RESOURCE);
+		CHECK(module && XlsLoadSpaFromModule(module, 0), "XlsLoadSpaFromModule(%s)", spaModule);
 	}
 	HANDLE listener = XNotifyCreateListener(XNOTIFY_ALL);
 	CHECK(listener != nullptr, "XNotifyCreateListener");
 	Pump(20);
 
 	if (XUserGetSigninState(0) != eXUserSigninState_SignedInToLive) {
-		printf("Steam is not available, only the offline paths ran.\n");
+		printf("[FAIL] Steam did not initialise for this app id, see xlive_steamworks.log (Steam not running, not logged in, or this account does not own the app).\n");
 		XLiveUninitialize();
 		return 1;
 	}
 
+	if (g_probe) {
+		SteamSummary();
+	}
 	TestNotifications(listener);
 	TestUser();
 	TestAchievements();
@@ -338,6 +460,9 @@ int main(int argc, char** argv)
 	TestStorage();
 	TestFriends();
 	TestNetworkAndSession();
+	if (g_probe) {
+		ProbeCleanup();
+	}
 
 	XCloseHandle(listener);
 	XLiveUninitialize();
