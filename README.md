@@ -149,6 +149,10 @@ cmake --build build --config Release
   client: sign-in, notifications, achievements, profile and storage on Cloud, friends, sockets,
   a real lobby, a leaderboard write and read. Put `steam_appid.txt` with your app id
   next to it, or `480` (Spacewar) for testing only. `--spa Game.exe` loads a real title's SPA for the achievement list.
+  `--filters` checks Steam's lobby filters against a lobby shaped like GTA IV's ranked search,
+  `--query "4:0x10000056=9,..."` runs an XLAST query of the loaded SPA and logs the filters sent,
+  `--voice` runs the voice engine in loopback, and `--pair-host CODE` / `--pair-join CODE`
+  (`--relay-only`) run the two-machine network test that the packer builds.
 - For a game owner to test end to end, the owner packer packs `bin/sfxt-owner-kit.zip`:
   a standalone probe plus a drop-in wrapper for the GFWL build, with numbered scripts that run the
   probe, back up and swap `xlive.dll` in the game folder, launch the game, collect the debug log and
@@ -163,7 +167,7 @@ cmake --build build --config Release
 Layout:
 
 ```
-tests/smoke/    the Steam smoke test and probe
+tests/smoke/    the Steam smoke test, probe and two-machine pair test
 src/xlive/      GFWL public types and prototypes, plus the extension header
 src/core/       Steam lifetime and pump, overlapped bridge, enumerators, notifications,
                 config, SPA reader, network layer, users, cloud, images
@@ -173,14 +177,15 @@ config/         example configuration
 
 ## Known limits
 
-- Host migration keeps the lobby. If Steam hands lobby ownership to a different member than the
-  one the title elects, that member cannot rewrite lobby data. The title's own migration message
-  still carries the new `XSESSION_INFO`, so clients follow it.
+- Host migration keeps the lobby. The elected host claims the lobby through its member data and
+  the current owner's wrapper hands it over. Until that happens, or until Steam times out a dead
+  owner, searchers still see the old host. Members follow the claim at once.
 - `XUserCreateStatsEnumeratorByRating` returns the top of the board since Steam cannot seek a
   leaderboard by score. `XUserEstimateRankForRating` answers rank 1.
 - Other players' title managed storage is not readable (Steam Cloud is per account).
 - Headless dedicated servers advertised through `XLocator` are out of scope, but a listen server that
-  runs under a Steam client works.
+  runs under a Steam client works. `XLocator` filter groups and sorters are not applied, so the
+  enumerator returns every advertised server of the title.
 - `XShowCustomPlayerListUI` opens the overlay's Players page and reports cancel, the title's
   custom buttons cannot be shown.
 - Voice playback goes through waveOut with a simple per-talker stream, there is no mixing into
