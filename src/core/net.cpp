@@ -202,6 +202,41 @@ SOCKET g_nextHandle = 0x2000;
 uint16_t g_nextEphemeral = 49152;
 bool g_started = false;
 XNADDR g_localXnaddr = {};
+int g_p2pTransport = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Default;
+bool g_p2pTransportSet = false;
+
+void ApplyP2PTransport()
+{
+	if (!SteamReady() || !SteamNetworkingUtils()) {
+		return;
+	}
+	SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_P2P_Transport_ICE_Enable, g_p2pTransport);
+	XLS_LOG_INFO("net: P2P transport ICE mask %d%s.", g_p2pTransport, g_p2pTransport == k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Disable ? " (relay only)" : "");
+}
+
+void FillConnectionInfo(const SteamNetConnectionInfo_t& info, const SteamNetConnectionRealTimeStatus_t* status, XLS_CONNECTION_INFO* out)
+{
+	memset(out, 0, sizeof(*out));
+	out->dwState = (DWORD)info.m_eState;
+	out->dwFlags = (DWORD)info.m_nFlags;
+	out->fRelayed = ((info.m_nFlags & k_nSteamNetworkConnectionInfoFlags_Relayed) || info.m_idPOPRelay) ? TRUE : FALSE;
+	out->fDirect = (!out->fRelayed && !info.m_addrRemote.IsIPv6AllZeros()) ? TRUE : FALSE;
+	if (info.m_idPOPRelay) {
+		GetSteamNetworkingLocationPOPStringFromID(info.m_idPOPRelay, out->szRelayPop);
+	}
+	if (info.m_idPOPRemote) {
+		GetSteamNetworkingLocationPOPStringFromID(info.m_idPOPRemote, out->szRemotePop);
+	}
+	if (!info.m_addrRemote.IsIPv6AllZeros()) {
+		info.m_addrRemote.ToString(out->szRemoteAddr, sizeof(out->szRemoteAddr), true);
+	}
+	if (status) {
+		out->dwPingMs = status->m_nPing > 0 ? (DWORD)status->m_nPing : 0;
+		out->flQualityLocal = status->m_flConnectionQualityLocal;
+		out->flQualityRemote = status->m_flConnectionQualityRemote;
+	}
+	CopyStringA(out->szDescription, sizeof(out->szDescription), info.m_szConnectionDescription);
+}
 
 XlsSocket* Find(SOCKET s)
 {
@@ -710,6 +745,13 @@ void NetInit()
 		g_localXnaddr.ina = LocalLanAddress();
 		g_secure[kLocalAlias] = SecureEntry{ false, SteamLocalId(), {}, 0, XNET_CONNECT_STATUS_CONNECTED };
 		g_aliasBySteamId[SteamLocalId().ConvertToUint64()] = kLocalAlias;
+		if (Cfg().relayOnly && !g_p2pTransportSet) {
+			g_p2pTransport = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Disable;
+			g_p2pTransportSet = true;
+		}
+		if (g_p2pTransportSet) {
+			ApplyP2PTransport();
+		}
 	}
 	else {
 		memset(&g_localXnaddr, 0, sizeof(g_localXnaddr));
@@ -1758,6 +1800,53 @@ bool NetSocketIsValid(SOCKET s)
 {
 	std::lock_guard<std::recursive_mutex> lock(g_mutex);
 	return Find(s) != nullptr;
+}
+
+// --- Diagnostics ---------------------------------------------------------------------------------
+
+void NetSetP2PTransport(int iceEnable)
+{
+	std::lock_guard<std::recursive_mutex> lock(g_mutex);
+	g_p2pTransport = iceEnable;
+	g_p2pTransportSet = true;
+	ApplyP2PTransport();
+}
+
+bool NetPeerConnectionInfo(IN_ADDR alias, XLS_CONNECTION_INFO* out)
+{
+	SecureEntry entry;
+	if (!ResolveAlias(alias, &entry) || entry.isServer || !SteamReady() || !SteamNetworkingMessages()) {
+		return false;
+	}
+	SteamNetConnectionInfo_t info = {};
+	SteamNetConnectionRealTimeStatus_t status = {};
+	ESteamNetworkingConnectionState state = SteamNetworkingMessages()->GetSessionConnectionInfo(IdentityOf(entry.steamId), &info, &status);
+	if (state == k_ESteamNetworkingConnectionState_None) {
+		return false;
+	}
+	FillConnectionInfo(info, &status, out);
+	return true;
+}
+
+bool NetSocketConnectionInfo(SOCKET s, XLS_CONNECTION_INFO* out)
+{
+	std::lock_guard<std::recursive_mutex> lock(g_mutex);
+	XlsSocket* socket = Find(s);
+	if (!socket || socket->connection == k_HSteamNetConnection_Invalid || !SteamReady() || !SteamNetworkingSockets()) {
+		return false;
+	}
+	SteamNetConnectionInfo_t info = {};
+	if (!SteamNetworkingSockets()->GetConnectionInfo(socket->connection, &info)) {
+		return false;
+	}
+	SteamNetConnectionRealTimeStatus_t status = {};
+	bool haveStatus = SteamNetworkingSockets()->GetConnectionRealTimeStatus(socket->connection, &status, 0, nullptr) == k_EResultOK;
+	FillConnectionInfo(info, haveStatus ? &status : nullptr, out);
+	char detail[2048] = {};
+	if (SteamNetworkingSockets()->GetDetailedConnectionStatus(socket->connection, detail, sizeof(detail)) == 0) {
+		XLS_LOG_DEBUG("net: socket %u status:\n%s", (unsigned)s, detail);
+	}
+	return true;
 }
 
 // --- Steam events --------------------------------------------------------------------------------

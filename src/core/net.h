@@ -4,6 +4,7 @@
 #pragma once
 
 #include "xlive/xdefs.h"
+#include "xlive/xlive_steamworks.h"
 #include "core/steam.h"
 
 namespace xls {
@@ -12,6 +13,14 @@ void NetInit();
 void NetShutdown();
 // Receives pending Steam messages into socket queues and services QoS and connection state.
 void NetPump();
+
+// --- Diagnostics ---------------------------------------------------------------------------------
+
+// iceEnable is a k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_* mask, 0 forces every peer
+// connection through a relay. Applies to connections made after the call.
+void NetSetP2PTransport(int iceEnable);
+bool NetPeerConnectionInfo(IN_ADDR alias, XLS_CONNECTION_INFO* out);
+bool NetSocketConnectionInfo(SOCKET s, XLS_CONNECTION_INFO* out);
 
 // --- Addresses -----------------------------------------------------------------------------------
 
