@@ -149,6 +149,12 @@ cmake --build build --config Release
   client: sign-in, notifications, achievements, profile and storage on Cloud, friends, sockets,
   a real lobby, a leaderboard write and read. Put `steam_appid.txt` with your app id
   next to it, or `480` (Spacewar) for testing only. `--spa Game.exe` loads a real title's SPA for the achievement list.
+- For a game owner to test end to end, the owner packer packs `bin/sfxt-owner-kit.zip`:
+  a standalone probe plus a drop-in wrapper for the GFWL build, with numbered scripts that run the
+  probe, back up and swap `xlive.dll` in the game folder, launch the game, collect the debug log and
+  system info, and zip it all back. The GFWL build of SFxT imports only `xlive.dll`, so the kit does
+  not touch any existing `steam_api.dll`. The Steam build keeps its own 2012 `steam_api.dll` and is
+  not a target (its 1.20 flat exports are gone from the 1.65 dll the wrapper needs).
 - `xlive_smoke.exe --probe` reports what a Steam app offers (ownership, achievement schema, Cloud,
   DLC, relay, leaderboards) without creating anything on it. the probe packer
   packs it as `bin/xlive-probe-<id>.zip` for another owner of the app to run and send back

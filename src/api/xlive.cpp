@@ -48,7 +48,7 @@ HRESULT WINAPI XLiveInitializeEx(XLIVE_INITIALIZE_INFO* pXii, DWORD dwTitleXLive
 		xls::ConfigLoad();
 		g_configLoaded = true;
 	}
-	XLS_LOG_INFO("xlive-steamworks %u.%u.%u initialising (title xlive version 0x%08x, flags 0x%08x).", XLS_VERSION_MAJOR, XLS_VERSION_MINOR, XLS_VERSION_PATCH, dwTitleXLiveVersion, pXii ? pXii->dwFlags : 0);
+	XLS_LOG_INFO("xlive-steamworks %u.%u.%u (built %s %s) initialising (title xlive version 0x%08x, flags 0x%08x).", XLS_VERSION_MAJOR, XLS_VERSION_MINOR, XLS_VERSION_PATCH, __DATE__, __TIME__, dwTitleXLiveVersion, pXii ? pXii->dwFlags : 0);
 
 	xls::SteamStart();
 
