@@ -54,11 +54,25 @@ first:
 | `title_servers` | if the title talked to XLSP servers (dedicated master servers), these keep their real IPs |
 | `steam.required` | set to false to suppress the "Steam not running" warning in offline-capable builds |
 
-## 4. First run checklist
+## 4. Probe the app, then run the title
 
-Before touching the title, `bin/xlive_smoke.exe` (built with `-DXLS_BUILD_TESTS=ON`) run with
-your `steam_appid.txt` shows in a few seconds whether Steam, Cloud, lobbies and leaderboards
-answer for the app, `--spa Game.exe` adds the title's own achievement list.
+Before touching the title, run the probe under your app id: `tools/make_probe.ps1 -AppId <id>`
+packs `bin/xlive-probe-<id>.zip`. Unzip it anywhere on a machine whose Steam account owns the
+app and run `run_probe.bat`. It reports ownership, the achievement schema, Cloud and its API
+quota, DLC, the relay network and lobbies, creates nothing persistent on the app, and writes
+`probe_report.txt` to send back. Add the game exe as the second argument to list its own SPA
+achievements.
+
+What the probe tells you:
+
+- `Steam did not initialise`: the account does not own the app (Steam answers
+  `ConnectToGlobalUser failed`), or Steam is not running.
+- `steam achievements defined for this app: 0`: no schema, unlocks go to the per-user file until
+  one exists (`achievements.local_fallback`).
+- `cloud: account 1, app 1` but `cloud quota: not reported`: Cloud is on for auto-cloud folders
+  only, the API refuses writes and the wrapper keeps profile and storage files next to the exe.
+- `leaderboard LB_1 does not exist`: create the boards on the partner site or leave
+  `leaderboards.create_if_missing` on.
 
 With `log.level` at `debug`:
 
