@@ -230,8 +230,9 @@ struct SearchEntry {
 	std::vector<xls::StoredProperty> values;
 };
 
-// Reads one lobby as a search result. With a query, exactly the attributes it declares, in its
-// order. Without one, every attribute the host published.
+// Reads one lobby as a search result. With a query, the attributes it declares, in its order,
+// plus the host's gamertag, which Live returned with every result. Without one, every
+// attribute the host published.
 bool ReadSearchEntry(CSteamID lobby, const xls::spa::Query* query, SearchEntry& entry)
 {
 	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
@@ -288,7 +289,7 @@ bool ReadSearchEntry(CSteamID lobby, const xls::spa::Query* query, SearchEntry& 
 		}
 	};
 	if (query && !query->returns.empty()) {
-		// Titles index the result by the query's declaration, an extra attribute breaks that.
+		// Titles index the result by the query's declaration
 		for (uint32_t attributeId : query->returns) {
 			if (XPROPERTYTYPEFROMID(attributeId) == XUSER_DATA_TYPE_CONTEXT) {
 				addContext(attributeId);
@@ -296,6 +297,9 @@ bool ReadSearchEntry(CSteamID lobby, const xls::spa::Query* query, SearchEntry& 
 			else {
 				addProperty(attributeId);
 			}
+		}
+		if (std::find(query->returns.begin(), query->returns.end(), (uint32_t)X_PROPERTY_GAMER_HOSTNAME) == query->returns.end()) {
+			addProperty(X_PROPERTY_GAMER_HOSTNAME);
 		}
 	}
 	else {
