@@ -124,7 +124,10 @@ with the drop-in dll but loads them with `GetProcAddress`.
   can hide it behind the game window, borderless windowed avoids that.
 - A session whose create flags carry `USES_PRESENCE` is the one invites go to.
 - Session searches return every public lobby of the app that the filters accept. The wrapper
-  hides lobbies this client is a member of.
+  hides lobbies this client is a member of. A result carries exactly the attributes the XLAST
+  query declares, in the declared order, as Live did. The host's gamertag and XUID travel as
+  the system properties `X_PROPERTY_GAMER_HOSTNAME` and `X_PROPERTY_GAMER_PUID`, which most
+  titles declare and show in their lobby list.
 - Host migration keeps the lobby id, so the XNKID and every registered key stay valid. Only the
   Steam lobby owner can write lobby data, so the member the title elects publishes a host claim
   in its member data. Whichever wrapper owns the lobby hands it over on seeing the claim, and the

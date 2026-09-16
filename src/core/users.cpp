@@ -252,6 +252,15 @@ bool StoredProperty::FromString(uint8_t dataType, const std::string& text)
 	}
 }
 
+// Live attached these two to every session search result. Here the host's copy rides in the
+// lobby data with the title's own properties.
+static void SetSystemProperties(LocalUser& user)
+{
+	user.properties[X_PROPERTY_GAMER_PUID].Set(XUSER_DATA_TYPE_INT64, &user.xuid, sizeof(user.xuid));
+	std::wstring name = Utf8ToWide(user.name);
+	user.properties[X_PROPERTY_GAMER_HOSTNAME].Set(XUSER_DATA_TYPE_UNICODE, name.c_str(), (name.size() + 1) * sizeof(wchar_t));
+}
+
 void UsersInit()
 {
 	std::lock_guard<std::recursive_mutex> lock(g_mutex);
@@ -265,6 +274,7 @@ void UsersInit()
 		std::string tag = GamertagFromPersona(SteamFriends()->GetPersonaName(), Cfg().asciiGamertags);
 		CopyStringA(user.name, sizeof(user.name), tag.c_str());
 		g_gamertags[user.xuid] = tag;
+		SetSystemProperties(user);
 		XLS_LOG_INFO("users: user 0 is %s (xuid 0x%016llx).", user.name, user.xuid);
 	}
 	if (Cfg().localUsersAllSignedIn) {
@@ -274,6 +284,7 @@ void UsersInit()
 			user.xuid = XUID_OFFLINE_FLAG | (0x1000 + i);
 			std::string name = FormatA("Player%u", i + 1);
 			CopyStringA(user.name, sizeof(user.name), name.c_str());
+			SetSystemProperties(user);
 		}
 	}
 }

@@ -230,7 +230,9 @@ struct SearchEntry {
 	std::vector<xls::StoredProperty> values;
 };
 
-bool ReadSearchEntry(CSteamID lobby, SearchEntry& entry)
+// Reads one lobby as a search result. With a query, exactly the attributes it declares, in its
+// order. Without one, every attribute the host published.
+bool ReadSearchEntry(CSteamID lobby, const xls::spa::Query* query, SearchEntry& entry)
 {
 	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
 	memset(&entry.result, 0, sizeof(entry.result));
@@ -247,6 +249,8 @@ bool ReadSearchEntry(CSteamID lobby, SearchEntry& entry)
 	entry.result.dwOpenPublicSlots = maxPublic - filledPublic;
 	entry.result.dwOpenPrivateSlots = maxPrivate - filledPrivate;
 
+	std::map<DWORD, DWORD> contexts;
+	std::map<DWORD, xls::StoredProperty> properties;
 	int count = matchmaking->GetLobbyDataCount(lobby);
 	std::string contextPrefix = xls::Cfg().lobbyKeyPrefix + "c";
 	std::string propertyPrefix = xls::Cfg().lobbyKeyPrefix + "p";
@@ -257,21 +261,49 @@ bool ReadSearchEntry(CSteamID lobby, SearchEntry& entry)
 			continue;
 		}
 		if (strncmp(key, contextPrefix.c_str(), contextPrefix.size()) == 0 && strlen(key) == contextPrefix.size() + 8) {
-			XUSER_CONTEXT context;
-			context.dwContextId = (DWORD)strtoul(key + contextPrefix.size(), nullptr, 16);
-			context.dwValue = (DWORD)strtoul(value, nullptr, 10);
-			entry.contexts.push_back(context);
+			contexts[(DWORD)strtoul(key + contextPrefix.size(), nullptr, 16)] = (DWORD)strtoul(value, nullptr, 10);
 		}
 		else if (strncmp(key, propertyPrefix.c_str(), propertyPrefix.size()) == 0 && strlen(key) == propertyPrefix.size() + 8) {
 			DWORD propertyId = (DWORD)strtoul(key + propertyPrefix.size(), nullptr, 16);
 			xls::StoredProperty stored;
-			if (!stored.FromString((uint8_t)XPROPERTYTYPEFROMID(propertyId), value)) {
-				continue;
+			if (stored.FromString((uint8_t)XPROPERTYTYPEFROMID(propertyId), value)) {
+				properties[propertyId] = stored;
 			}
+		}
+	}
+	auto addContext = [&](DWORD contextId) {
+		auto it = contexts.find(contextId);
+		if (it != contexts.end()) {
+			XUSER_CONTEXT context = { it->first, it->second };
+			entry.contexts.push_back(context);
+		}
+	};
+	auto addProperty = [&](DWORD propertyId) {
+		auto it = properties.find(propertyId);
+		if (it != properties.end()) {
 			XUSER_PROPERTY property = {};
 			property.dwPropertyId = propertyId;
 			entry.properties.push_back(property);
-			entry.values.push_back(stored);
+			entry.values.push_back(it->second);
+		}
+	};
+	if (query && !query->returns.empty()) {
+		// Titles index the result by the query's declaration, an extra attribute breaks that.
+		for (uint32_t attributeId : query->returns) {
+			if (XPROPERTYTYPEFROMID(attributeId) == XUSER_DATA_TYPE_CONTEXT) {
+				addContext(attributeId);
+			}
+			else {
+				addProperty(attributeId);
+			}
+		}
+	}
+	else {
+		for (const auto& context : contexts) {
+			addContext(context.first);
+		}
+		for (const auto& property : properties) {
+			addProperty(property.first);
 		}
 	}
 	entry.result.cContexts = (DWORD)entry.contexts.size();
@@ -1207,11 +1239,12 @@ DWORD WINAPI XSessionSearchEx(DWORD dwProcedureIndex, DWORD dwUserIndex, DWORD d
 		return xls::OverlappedReturn(pOverlapped, ERROR_SUCCESS);
 	}
 	AddSearchFilters(dwProcedureIndex, wNumProperties, wNumContexts, pSearchProperties, pSearchContexts, dwNumResults);
+	const xls::spa::Query* query = xls::spa::FindQuery(dwProcedureIndex);
 	auto call = std::make_shared<xls::SteamCall<LobbyMatchList_t>>();
 	call->Start(xls::SteamMatchmaking()->RequestLobbyList());
 	DWORD bufferSize = *pcbResultsBuffer;
 	XLS_LOG_INFO("session: searching (procedure %u, %u contexts, %u properties).", dwProcedureIndex, wNumContexts, wNumProperties);
-	return xls::RunAsync(pOverlapped, [call, dwNumResults, pSearchResults, bufferSize](XOVERLAPPED* overlapped) {
+	return xls::RunAsync(pOverlapped, [call, query, dwNumResults, pSearchResults, bufferSize](XOVERLAPPED* overlapped) {
 		if (!call->Poll()) {
 			return false;
 		}
@@ -1224,7 +1257,8 @@ DWORD WINAPI XSessionSearchEx(DWORD dwProcedureIndex, DWORD dwUserIndex, DWORD d
 					continue;
 				}
 				SearchEntry entry;
-				if (ReadSearchEntry(lobby, entry)) {
+				if (ReadSearchEntry(lobby, query, entry)) {
+					XLS_LOG_DEBUG("session: lobby %llu returns %u contexts, %u properties.", lobby.ConvertToUint64(), entry.result.cContexts, entry.result.cProperties);
 					entries.push_back(std::move(entry));
 				}
 			}
@@ -1270,7 +1304,7 @@ DWORD WINAPI XSessionSearchByID(XNKID sessionID, DWORD dwUserIndex, DWORD* pcbRe
 		}
 		std::vector<SearchEntry> entries;
 		SearchEntry entry;
-		if (ReadSearchEntry(lobby, entry)) {
+		if (ReadSearchEntry(lobby, nullptr, entry)) {
 			entries.push_back(std::move(entry));
 		}
 		DWORD written = PackSearchResults(entries, pSearchResults, bufferSize);

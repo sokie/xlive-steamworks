@@ -238,6 +238,18 @@ bool JoinerFind(Pair& p)
 		}
 	}
 	CHECK(codeCarried && modeCarried, "result carries the host's context and properties (%u contexts, %u properties, %u open public slots)", result.cContexts, result.cProperties, result.dwOpenPublicSlots);
+	const wchar_t* hostName = nullptr;
+	ULONGLONG hostPuid = 0;
+	for (DWORD i = 0; i < result.cProperties; i++) {
+		const XUSER_PROPERTY& property = result.pProperties[i];
+		if (property.dwPropertyId == X_PROPERTY_GAMER_HOSTNAME && property.value.type == XUSER_DATA_TYPE_UNICODE) {
+			hostName = property.value.string.pwszData;
+		}
+		if (property.dwPropertyId == X_PROPERTY_GAMER_PUID && property.value.type == XUSER_DATA_TYPE_INT64) {
+			hostPuid = (ULONGLONG)property.value.i64Data;
+		}
+	}
+	CHECK(hostName && hostName[0] && hostPuid, "result carries the host's gamertag \"%ls\" and XUID 0x%016llx as system properties", hostName ? hostName : L"", hostPuid);
 
 	// Filters must also exclude: a wrong code and a wrong game mode find nothing.
 	std::vector<uint8_t> other;
