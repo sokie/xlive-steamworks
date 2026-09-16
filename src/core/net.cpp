@@ -209,6 +209,7 @@ bool g_started = false;
 XNADDR g_localXnaddr = {};
 int g_p2pTransport = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Default;
 bool g_p2pTransportSet = false;
+bool g_hadPeers = false;
 
 void ApplyP2PTransport()
 {
@@ -898,6 +899,7 @@ IN_ADDR NetSecureAddrFor(CSteamID steamId)
 	SecureEntry entry;
 	entry.steamId = steamId;
 	g_secure[alias] = entry;
+	g_hadPeers = true;
 	g_aliasBySteamId[steamId.ConvertToUint64()] = alias;
 	XLS_LOG_DEBUG("net: alias %u.%u.%u.%u -> %llu.", alias >> 24, (alias >> 16) & 0xFF, (alias >> 8) & 0xFF, alias & 0xFF, steamId.ConvertToUint64());
 	return AliasToInAddr(alias);
@@ -1851,6 +1853,11 @@ bool NetSocketIsValid(SOCKET s)
 }
 
 // --- Diagnostics ---------------------------------------------------------------------------------
+
+bool NetHadPeers()
+{
+	return g_hadPeers;
+}
 
 void NetSetP2PTransport(int iceEnable)
 {

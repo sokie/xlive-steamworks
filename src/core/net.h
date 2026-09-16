@@ -16,6 +16,8 @@ void NetPump();
 
 // --- Diagnostics ---------------------------------------------------------------------------------
 
+// True once any remote peer has been given an alias, so Steam sessions may exist or be closing.
+bool NetHadPeers();
 // iceEnable is a k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_* mask, 0 forces every peer
 // connection through a relay. Applies to connections made after the call.
 void NetSetP2PTransport(int iceEnable);
