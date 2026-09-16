@@ -188,6 +188,7 @@ bool ConfigLoad()
 			config.lobbyDistanceFilter = (int)sessions["lobby_distance_filter"].GetInt(1);
 			config.sessionsAcceptAnyPeer = sessions["accept_any_peer"].GetBool(true);
 			config.relayOnly = root["network"]["relay_only"].GetBool(false);
+			config.sendRateKBytes = (uint32_t)root["network"]["send_rate_kbytes"].GetInt(0);
 
 			const Json& presence = root["presence"];
 			config.richPresenceKey = presence["key"].GetString("status");

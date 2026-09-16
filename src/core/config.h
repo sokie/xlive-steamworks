@@ -79,7 +79,8 @@ struct Config {
 	uint32_t asyncTimeoutMs = 15000;
 
 	// Networking.
-	bool relayOnly = false;             // Never share IP addresses, every peer connection goes through a Steam relay.
+	bool relayOnly = false;             // Never share IP addresses, make every peer connection goes through a Steam relay.
+	uint32_t sendRateKBytes = 0;        // Per-peer cap on outgoing bytes, 0 keeps Steam's default (256 KB/s).
 
 	// Presence.
 	std::string richPresenceKey = "status";

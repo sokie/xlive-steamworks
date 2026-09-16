@@ -78,7 +78,8 @@
 	],
 
 	"network": {
-		"relay_only": false          // true: never share IP addresses, every peer connection goes through a Steam relay
+		"relay_only": false,         // true: never share IP addresses, every peer connection goes through a Steam relay
+		"send_rate_kbytes": 0        // per-peer cap on outgoing bytes, 0 keeps Steam's default of 256 KB/s
 	},
 	"voice": {
 		"enabled": true
