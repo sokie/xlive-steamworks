@@ -150,7 +150,8 @@ bool WaitFor(Pair& p, const char* prefix, std::string* text, DWORD timeoutMs, co
 				sink(message);
 			}
 		}
-		Pump(1);
+		XLiveRender();
+		Sleep(1);
 	}
 	return false;
 }
@@ -710,16 +711,22 @@ void MigrationAfterHostLeft(Pair& p)
 		p.session = nullptr;
 		std::string reply;
 		CHECK(WaitFor(p, "MIGRATE2_OK", &reply, 90000), "remaining member took the session over: %s", reply.c_str());
-		Pump(100);
-		DWORD size = 0;
-		XSessionSearchByID(p.info.sessionID, 0, &size, nullptr, nullptr);
-		std::vector<uint8_t> buffer(size);
-		XSESSION_SEARCHRESULT_HEADER* header = (XSESSION_SEARCHRESULT_HEADER*)buffer.data();
-		DWORD result = XSessionSearchByID(p.info.sessionID, 0, &size, header, nullptr);
-		CHECK(result == ERROR_SUCCESS && header->dwSearchResults == 1, "XSessionSearchByID after leaving -> %u result(s)", result == ERROR_SUCCESS ? header->dwSearchResults : 0);
-		if (result == ERROR_SUCCESS && header->dwSearchResults == 1) {
-			CHECK(SteamIdOfXnaddr(header->pResults[0].info.hostAddress) == p.peerSteamId, "the session now names the remaining member as host");
+		// The new owner's data takes a moment to reach the backend so poll a few times.
+		DWORD result = 0;
+		DWORD found = 0;
+		uint64_t seenHost = 0;
+		for (int attempt = 0; attempt < 5 && seenHost != p.peerSteamId; attempt++) {
+			Pump(100);
+			DWORD size = 0;
+			XSessionSearchByID(p.info.sessionID, 0, &size, nullptr, nullptr);
+			std::vector<uint8_t> buffer(size);
+			XSESSION_SEARCHRESULT_HEADER* header = (XSESSION_SEARCHRESULT_HEADER*)buffer.data();
+			result = XSessionSearchByID(p.info.sessionID, 0, &size, header, nullptr);
+			found = result == ERROR_SUCCESS ? header->dwSearchResults : 0;
+			seenHost = found == 1 ? SteamIdOfXnaddr(header->pResults[0].info.hostAddress) : 0;
 		}
+		CHECK(result == ERROR_SUCCESS && found == 1, "XSessionSearchByID after leaving -> %u result(s)", found);
+		CHECK(seenHost == p.peerSteamId, "the session names the remaining member as host (saw %llu, expected %llu)", seenHost, p.peerSteamId);
 		SendRepeated(p, "DONE");
 	}
 	else {
