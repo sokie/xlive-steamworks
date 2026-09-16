@@ -58,13 +58,14 @@ first:
 
 Before touching the title, run the probe under your app id: `tools/make_probe.ps1 -AppId <id>`
 packs `bin/xlive-probe-<id>.zip`. Unzip it anywhere on a machine whose Steam account owns the
-app and run `run_probe.bat`. It reports ownership, the achievement schema, Cloud and its API
+app and run `1_run_probe.bat`. It reports ownership, the achievement schema, Cloud and its API
 quota, DLC, the relay network and lobbies, creates nothing persistent on the app, and writes
-`probe_report.txt` to send back. Add the game exe as the second argument to list its own SPA
-achievements. `tools/make_pair_kit.ps1` packs `bin/xlive-pair-kit.zip`, a two-PC test under
-Spacewar that proves filtered discovery, UDP and TCP traffic through the GFWL socket API, the
-transport Steam chose (direct or relay, and a forced relay-only run), voice frames and host
-migration in both directions between two real networks.
+its report into `results\` and `2_zip_results.bat` packs that folder to send back.
+`tools/make_pair_kit.ps1` packs `bin/xlive-pair-kit.zip`, a two-PC test that proves
+filtered discovery, UDP and TCP traffic through the GFWL socket API, the transport Steam chose
+(direct or relay, and a forced relay-only run), voice frames and host migration in both
+directions between two real networks. It runs as Steam app 480 (Spacewar), which is for testing
+only.
 
 What the probe tells you:
 

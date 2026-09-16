@@ -14,14 +14,17 @@ if not exist "probe\xlive_smoke.exe" (
 	exit /b 1
 )
 
+set "APPID="
+if exist "probe\steam_appid.txt" set /p APPID=<probe\steam_appid.txt
+
 echo Writing system info ...
 > results\system_info.txt echo ===== system info =====
 ver >> results\system_info.txt
 powershell -NoProfile -Command "$o=Get-CimInstance Win32_OperatingSystem; ('OS: {0} (build {1}, {2})' -f $o.Caption,$o.BuildNumber,$o.OSArchitecture); 'GPU:'; Get-CimInstance Win32_VideoController | ForEach-Object { ('  {0} | driver {1} | {2}x{3} @ {4}Hz' -f $_.Name,$_.DriverVersion,$_.CurrentHorizontalResolution,$_.CurrentVerticalResolution,$_.CurrentRefreshRate) }; ('Steam running: {0}' -f [bool](Get-Process steam -ErrorAction SilentlyContinue))" >> results\system_info.txt 2>&1
 
 echo.
-echo Running the Steam probe for app 209120 ...
-echo Steam must be running, and this account must own Street Fighter X Tekken.
+echo Running the Steam probe for app %APPID% ...
+echo Steam must be running, and this account must own the app.
 echo This takes about a minute. Please wait.
 echo.
 del results\probe_debug.log 2>nul
@@ -32,7 +35,7 @@ set "RC=%ERRORLEVEL%"
 >> results\probe_report.txt echo.
 >> results\probe_report.txt echo (probe exit code %RC%)
 
-rem The dll writes its own debug log straight into results via its config, keep a copy if it landed elsewhere.
+rem The dll logs into results through its config, keep a copy if it landed next to the exe.
 if exist probe\xlive_steamworks.log copy /y probe\xlive_steamworks.log results\probe_debug.log >nul 2>nul
 
 type results\probe_report.txt
@@ -40,6 +43,6 @@ echo.
 echo ------------------------------------------------------------------
 echo Probe done. Everything is in the 'results' folder:
 echo   probe_report.txt, probe_debug.log, system_info.txt
-echo Next: run 4_zip_results.bat to package them, or 2_install_and_play.bat to test the game.
+echo Next: run 2_zip_results.bat to package them.
 echo ------------------------------------------------------------------
 pause

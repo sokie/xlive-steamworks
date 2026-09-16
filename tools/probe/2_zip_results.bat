@@ -8,7 +8,7 @@ if not exist results\probe_report.txt (
 	exit /b 1
 )
 
-set "OUT=%~dp0sfxt-results.zip"
+set "OUT=%~dp0probe-results.zip"
 del "%OUT%" 2>nul
 
 echo Packaging results ...
