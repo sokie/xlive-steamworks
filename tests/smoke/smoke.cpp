@@ -445,6 +445,19 @@ static void TestNetworkAndSession()
 		XSESSION_SEARCHRESULT& found = header->pResults[0];
 		CHECK(memcmp(&found.info.keyExchangeKey, &info.keyExchangeKey, sizeof(XNKEY)) == 0, "search result carries the XNKEY");
 		CHECK(found.cContexts >= 2, "search result carries %u context(s), %u propert(ies)", found.cContexts, found.cProperties);
+		const wchar_t* hostName = nullptr;
+		ULONGLONG hostPuid = 0;
+		for (DWORD i = 0; i < found.cProperties; i++) {
+			if (found.pProperties[i].dwPropertyId == X_PROPERTY_GAMER_HOSTNAME && found.pProperties[i].value.type == XUSER_DATA_TYPE_UNICODE) {
+				hostName = found.pProperties[i].value.string.pwszData;
+			}
+			if (found.pProperties[i].dwPropertyId == X_PROPERTY_GAMER_PUID && found.pProperties[i].value.type == XUSER_DATA_TYPE_INT64) {
+				hostPuid = (ULONGLONG)found.pProperties[i].value.i64Data;
+			}
+		}
+		XUID localXuid = 0;
+		XUserGetXUID(0, &localXuid);
+		CHECK(hostName && hostName[0] && hostPuid == localXuid, "search result carries the host's gamertag \"%ls\" and XUID 0x%016llx as system properties", hostName ? hostName : L"", hostPuid);
 	}
 
 	// A public search from the same client hides its own lobby, this checks the request itself.
