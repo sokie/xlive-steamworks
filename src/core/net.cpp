@@ -595,22 +595,33 @@ void PumpRealSockets()
 	}
 }
 
-void PumpStreams()
+// Moves every message Steam holds for the connection into the socket's stream buffer.
+void DrainConnection(HSteamNetConnection connection, XlsSocket* socket)
 {
 	SteamNetworkingMessage_t* messages[32];
-	for (auto& entry : g_socketByConnection) {
-		XlsSocket* socket = entry.second;
-		if (!socket->connected) {
-			continue;
-		}
-		int count = SteamNetworkingSockets()->ReceiveMessagesOnConnection(entry.first, messages, 32);
+	bool received = false;
+	for (;;) {
+		int count = SteamNetworkingSockets()->ReceiveMessagesOnConnection(connection, messages, 32);
 		for (int i = 0; i < count; i++) {
 			SteamNetworkingMessage_t* message = messages[i];
 			socket->stream.insert(socket->stream.end(), (const uint8_t*)message->m_pData, (const uint8_t*)message->m_pData + message->m_cbSize);
 			message->Release();
 		}
-		if (count > 0) {
-			socket->Signal(FD_READ);
+		received = received || count > 0;
+		if (count < 32) {
+			break;
+		}
+	}
+	if (received) {
+		socket->Signal(FD_READ);
+	}
+}
+
+void PumpStreams()
+{
+	for (auto& entry : g_socketByConnection) {
+		if (entry.second->connected) {
+			DrainConnection(entry.first, entry.second);
 		}
 	}
 }
@@ -1986,6 +1997,9 @@ void OnNetConnectionStatusChanged(const SteamNetConnectionStatusChangedCallback_
 			break;
 		case k_ESteamNetworkingConnectionState_ClosedByPeer:
 		case k_ESteamNetworkingConnectionState_ProblemDetectedLocally:
+			// The peer's last messages are still queued on the connection so the title reads them
+			// before it sees the close, as with TCP.
+			DrainConnection(connection, socket);
 			if (socket->connecting) {
 				socket->connectError = WSAECONNREFUSED;
 			}

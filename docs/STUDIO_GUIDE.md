@@ -129,6 +129,8 @@ with the drop-in dll but loads them with `GetProcAddress`.
   system properties `X_PROPERTY_GAMER_HOSTNAME` and `X_PROPERTY_GAMER_PUID`. Live returned the
   gamertag with every result, so it follows the declared attributes when a query leaves it out.
   The XUID comes only when declared.
+- A lobby whose host left stays out of searches until a host migrates to it: the member Steam
+  hands the lobby to marks it unjoinable, and the migrated host's publish undoes that.
 - Host migration keeps the lobby id, so the XNKID and every registered key stay valid. Only the
   Steam lobby owner can write lobby data, so the member the title elects publishes a host claim
   in its member data. Whichever wrapper owns the lobby hands it over on seeing the claim, and the
