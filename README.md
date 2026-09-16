@@ -34,44 +34,6 @@ dll. Per-title folders, configs and notes live in
 [xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games). A title that imports
 nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
 
-## Why
-
-GFWL is long unsupported, and the titles built on it keep losing online play, achievements and
-cloud saves as publishers strip `xlive.dll` from their Steam builds. 
-
-It is a work in progress. The export table is complete and the we have some initial tests, 
-but only a few titles have been run with it (see below), and each new title
-finds some weird. [XLiveLessNess](https://gitlab.com/GlitchyScripts/xlivelessness) is the
-reference for how the GFWL API behaves, and the Steamworks SDK is fetched from
-[rlabrecque's mirror](https://github.com/rlabrecque/SteamworksSDK). This project is not
-affiliated with Microsoft or Valve.
-
-## Titles
-
-Street Fighter X Tekken (the GFWL and the Steam build) and Lost Planet 2 run with the drop-in
-dll. Per-title folders, configs and notes live in
-[xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games). A title that imports
-nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
-
-## Why
-
-GFWL is long unsupported, and the titles built on it keep losing online play, achievements and
-cloud saves as publishers strip `xlive.dll` from their Steam builds. 
-
-It is a work in progress. The export table is complete and the we have some initial tests, 
-but only a few titles have been run with it (see below), and each new title
-finds some weird. [XLiveLessNess](https://gitlab.com/GlitchyScripts/xlivelessness) is the
-reference for how the GFWL API behaves, and the Steamworks SDK is fetched from
-[rlabrecque's mirror](https://github.com/rlabrecque/SteamworksSDK). This project is not
-affiliated with Microsoft or Valve.
-
-## Titles
-
-Street Fighter X Tekken (the GFWL and the Steam build) and Lost Planet 2 run with the drop-in
-dll. Per-title folders, configs and notes live in
-[xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games). A title that imports
-nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
-
 ## Status
 
 | Area | State | Steam side |
@@ -140,10 +102,11 @@ cmake --build build --config Release
 - GFWL titles are 32-bit, so build with `-A Win32`. A 64-bit build works and links
   `steam_api64`.
 - Without `STEAMWORKS_SDK_DIR` the rlabrecque mirror of the SDK is fetched at the pinned
-  revision (v1.65). The code builds against SDK 1.62 and newer. On Linux, Proton's
-  `lsteamclient` bridges the Windows `steam_api.dll` to the native client and knows SDK 1.65
-  from Proton 10 on. Proton 9 stops at 1.62, so a title that must run there builds against 1.62
-  (`-DSTEAMWORKS_SDK_GIT_TAG=34d9338aa892213861bd9f84c4dd9c5b7fd23de7` fetches that mirror commit).
+  revision (v1.62). The code builds against SDK 1.62 and newer. The default is 1.62 because it runs
+  everywhere: the library ships its own `steam_api.dll`, so the SDK version does not have to match
+  the client, and on Linux Proton's `lsteamclient` bridges the Windows `steam_api.dll` only up to
+  the SDK it knows (1.62 in Proton 9, 1.65 in Proton 10 and later). Build against a newer SDK with
+  `-DSTEAMWORKS_SDK_GIT_TAG=df2baabf574a738ef1ea90a7e89339107fc0a279` (v1.65) if a title needs it.
 - `-DXLS_BUILD_STATIC=ON` produces `xlive.lib` for linking into a title. The def file is not used
   in that configuration.
 - The runtime is the static CRT. The dll depends on `steam_api.dll`, `ws2_32`, `winmm`,
