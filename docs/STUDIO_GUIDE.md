@@ -134,6 +134,11 @@ with the drop-in dll but loads them with `GetProcAddress`.
   `XlsSetP2PTransport`) forces the relay path, which is useful to test what players behind
   strict NATs get. `XlsPeerConnectionInfo` and `XlsSocketConnectionInfo` report which path a
   connection took.
+- `XLiveUninitialize` calls `SteamAPI_Shutdown` only when the process never addressed a peer.
+  After online play the Steam API is left up until the process exits: closed peer connections
+  keep handshaking on Steam's networking thread for a few seconds, and shutting the API down
+  under them crashes inside Steam. Process exit
+  ends that thread first. `steam.shutdown_api` = false skips the call in every case.
 - Voice works out of the box, played through waveOut with one stream per talker. Titles that
   route XHV output through their own audio graph get the same PCM only if that graph is bypassed.
 - `XStorage*` reads of other players' files fail with file-not-found since Steam Cloud is per
