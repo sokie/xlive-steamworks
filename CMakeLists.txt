@@ -23,13 +23,15 @@ set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 # Point STEAMWORKS_SDK_DIR at an unpacked SDK (the directory that holds public/ and
 # redistributable_bin/). Without it the rlabrecque mirror is fetched at the pinned revision.
 set(STEAMWORKS_SDK_DIR "" CACHE PATH "Path to the Steamworks SDK root (contains public/steam)")
+# v1.65. Proton 9 bridges SDK versions up to 1.62 (v1.62 is 34d9338aa892213861bd9f84c4dd9c5b7fd23de7).
+set(STEAMWORKS_SDK_GIT_TAG "df2baabf574a738ef1ea90a7e89339107fc0a279" CACHE STRING "Commit of the rlabrecque mirror to fetch when STEAMWORKS_SDK_DIR is not set")
 
 if(NOT STEAMWORKS_SDK_DIR)
     include(cmake/CPM.cmake)
     CPMAddPackage(
         NAME SteamworksSDK
         GITHUB_REPOSITORY rlabrecque/SteamworksSDK
-        GIT_TAG df2baabf574a738ef1ea90a7e89339107fc0a279 # v1.65
+        GIT_TAG ${STEAMWORKS_SDK_GIT_TAG}
         GIT_SHALLOW TRUE
         DOWNLOAD_ONLY TRUE
     )
