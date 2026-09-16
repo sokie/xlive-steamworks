@@ -156,13 +156,6 @@ void PublishRichPresenceConnect(const Session* session)
 	}
 }
 
-uint64_t HostClaimSeq()
-{
-	FILETIME now;
-	GetSystemTimeAsFileTime(&now);
-	return (((uint64_t)now.dwHighDateTime << 32) | now.dwLowDateTime) / 10000;
-}
-
 // A member that took over as host publishes "<xnaddr hex>|<seq>" in its member data, which
 // can be done without lobby ownership. Returns the member with the newest claim above minSeq, or nil.
 CSteamID NewestHostClaim(CSteamID lobby, uint64_t minSeq, XNADDR* hostAddress, uint64_t* seq)
@@ -199,6 +192,17 @@ uint64_t LobbyHostSeq(CSteamID lobby)
 	return _strtoui64(xls::SteamMatchmaking()->GetLobbyData(lobby, Key("hostseq").c_str()), nullptr, 10);
 }
 
+// One above every sequence this client can see, so a claim never depends on a wall clock.
+uint64_t NextHostSeq(CSteamID lobby)
+{
+	uint64_t seq = LobbyHostSeq(lobby);
+	uint64_t claimSeq = 0;
+	if (NewestHostClaim(lobby, 0, nullptr, &claimSeq).IsValid() && claimSeq > seq) {
+		seq = claimSeq;
+	}
+	return seq + 1;
+}
+
 bool ReadSessionInfo(CSteamID lobby, XSESSION_INFO* info)
 {
 	ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
@@ -212,7 +216,10 @@ bool ReadSessionInfo(CSteamID lobby, XSESSION_INFO* info)
 	if (!xls::HexDecode(matchmaking->GetLobbyData(lobby, Key("host").c_str()), &info->hostAddress, sizeof(info->hostAddress))) {
 		xls::NetXnaddrForSteamId(matchmaking->GetLobbyOwner(lobby), &info->hostAddress);
 	}
-	NewestHostClaim(lobby, LobbyHostSeq(lobby), &info->hostAddress, nullptr);
+	// Member data is only current for a lobby this client is in
+	if (FindByLobby(lobby)) {
+		NewestHostClaim(lobby, LobbyHostSeq(lobby), &info->hostAddress, nullptr);
+	}
 	return true;
 }
 
@@ -793,7 +800,7 @@ DWORD WINAPI XSessionCreate(DWORD dwFlags, DWORD dwUserIndex, DWORD dwMaxPublicS
 
 	if (session->host) {
 		session->nonce = ((uint64_t)GetTickCount64() << 24) ^ xls::SteamLocalId().ConvertToUint64();
-		session->hostSeq = HostClaimSeq();
+		session->hostSeq = 1;
 		xls::NetLocalXnaddr(&session->info.hostAddress);
 		xls::NetCreateKey(nullptr, &session->info.keyExchangeKey);
 		int maxMembers = (int)std::min<DWORD>(std::max<DWORD>(dwMaxPublicSlots + dwMaxPrivateSlots, 1), 250);
@@ -1109,7 +1116,7 @@ DWORD WINAPI XSessionMigrateHost(HANDLE hSession, DWORD dwUserIndex, XSESSION_IN
 		session->host = true;
 		session->userIndex = dwUserIndex;
 		session->flags |= XSESSION_CREATE_HOST;
-		session->hostSeq = HostClaimSeq();
+		session->hostSeq = session->lobby.IsValid() && xls::SteamReady() ? NextHostSeq(session->lobby) : 1;
 		xls::NetLocalXnaddr(&session->info.hostAddress);
 		if (session->lobby.IsValid() && !session->deleted && xls::SteamReady()) {
 			ISteamMatchmaking* matchmaking = xls::SteamMatchmaking();
