@@ -12,10 +12,28 @@ namespace xls {
 namespace {
 
 bool g_writeFailureLogged = false;
+bool g_quotaKnown = false;
+bool g_noQuotaLogged = false;
+
+// An app with Cloud switched on but no API quota accepts writes that do not survive the session.
+bool HasQuota()
+{
+	if (g_quotaKnown) {
+		return true;
+	}
+	uint64 total = 0;
+	uint64 available = 0;
+	g_quotaKnown = SteamRemoteStorage()->GetQuota(&total, &available) && total > 0;
+	if (!g_quotaKnown && !g_noQuotaLogged) {
+		XLS_LOG_WARN("cloud: the app reports no Cloud quota, files stay in the local folder.");
+		g_noQuotaLogged = true;
+	}
+	return g_quotaKnown;
+}
 
 bool UseSteamCloud()
 {
-	return Cfg().cloudEnabled && SteamReady() && SteamRemoteStorage() && SteamRemoteStorage()->IsCloudEnabledForAccount() && SteamRemoteStorage()->IsCloudEnabledForApp();
+	return Cfg().cloudEnabled && SteamReady() && SteamRemoteStorage() && SteamRemoteStorage()->IsCloudEnabledForAccount() && SteamRemoteStorage()->IsCloudEnabledForApp() && HasQuota();
 }
 
 std::wstring LocalRoot()
