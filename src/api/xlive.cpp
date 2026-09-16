@@ -14,6 +14,8 @@
 #include "core/users.h"
 #include "core/utils.h"
 
+#include <ctime>
+
 namespace {
 
 bool g_initialised = false;
@@ -21,6 +23,24 @@ bool g_configLoaded = false;
 uint32_t g_titleId = 0;
 uint32_t g_titleVersion = 0;
 XLIVE_DEBUG_LEVEL g_debugLevel = XLIVE_DEBUG_LEVEL_DEFAULT;
+
+// The link time from the PE header __DATE__ only changes when this file recompiles.
+std::string LinkStamp()
+{
+	HMODULE module = nullptr;
+	GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)&LinkStamp, &module);
+	if (!module) {
+		return "unknown";
+	}
+	const IMAGE_DOS_HEADER* dos = (const IMAGE_DOS_HEADER*)module;
+	const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)((const uint8_t*)module + dos->e_lfanew);
+	time_t stamp = (time_t)nt->FileHeader.TimeDateStamp;
+	struct tm utc = {};
+	gmtime_s(&utc, &stamp);
+	char text[32];
+	strftime(text, sizeof(text), "%Y-%m-%d %H:%M UTC", &utc);
+	return text;
+}
 
 }
 
@@ -48,7 +68,7 @@ HRESULT WINAPI XLiveInitializeEx(XLIVE_INITIALIZE_INFO* pXii, DWORD dwTitleXLive
 		xls::ConfigLoad();
 		g_configLoaded = true;
 	}
-	XLS_LOG_INFO("xlive-steamworks %u.%u.%u (built %s %s) initialising (title xlive version 0x%08x, flags 0x%08x).", XLS_VERSION_MAJOR, XLS_VERSION_MINOR, XLS_VERSION_PATCH, __DATE__, __TIME__, dwTitleXLiveVersion, pXii ? pXii->dwFlags : 0);
+	XLS_LOG_INFO("xlive-steamworks %u.%u.%u (linked %s) initialising (title xlive version 0x%08x, flags 0x%08x).", XLS_VERSION_MAJOR, XLS_VERSION_MINOR, XLS_VERSION_PATCH, LinkStamp().c_str(), dwTitleXLiveVersion, pXii ? pXii->dwFlags : 0);
 
 	xls::SteamStart();
 

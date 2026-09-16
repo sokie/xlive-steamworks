@@ -463,7 +463,8 @@ void TcpClient(Pair& p, uint16_t port, const char* label)
 	else {
 		CHECK(false, "%s: XlsSocketConnectionInfo", label);
 	}
-	Pump(20);
+	// Sent and closed back to back: the peer must still read it, as over TCP.
+	SendAll(s, "LAST\n", 10000);
 	XSocketClose(s);
 }
 
@@ -511,8 +512,23 @@ void TcpServer(Pair& p, const char* label, DWORD timeoutMs)
 	else {
 		CHECK(false, "%s: XlsSocketConnectionInfo", label);
 	}
-	// Let the peer read the last echo before the close reaches it.
-	std::string drain = RecvUntil(c, 1, 2000);
+	std::string tail;
+	bool closed = false;
+	started = GetTickCount();
+	while (!closed && GetTickCount() - started < 10000) {
+		char buffer[64];
+		int got = XSocketRecv(c, buffer, sizeof(buffer), 0);
+		if (got > 0) {
+			tail.append(buffer, got);
+		}
+		else if (got == 0) {
+			closed = true;
+		}
+		else {
+			Pump(1);
+		}
+	}
+	CHECK(tail == "LAST\n" && closed, "%s: the line sent right before the peer closed arrived (%zu bytes), then the close", label, tail.size());
 	XSocketClose(c);
 }
 
