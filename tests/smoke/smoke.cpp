@@ -15,6 +15,15 @@
 // steam_api sets SteamAppId itself when it reads steam_appid.txt, so this is sampled before init.
 static bool g_launchedBySteam = false;
 
+static int SteamHandheld()
+{
+#if XLS_STEAM_HARDWARE_API
+	return (int)SteamUtils()->IsRunningOnSteamHardware();
+#else
+	return (int)SteamUtils()->IsSteamRunningOnSteamDeck();
+#endif
+}
+
 static void SteamSummary()
 {
 	// Stats and the relay configuration arrive a moment after init so give them a few seconds.
@@ -31,7 +40,7 @@ static void SteamSummary()
 	AppId_t appId = SteamUtils()->GetAppID();
 	INFO("app id %u, Steam user %llu \"%s\", logged on %d, language %s", appId, SteamUser()->GetSteamID().ConvertToUint64(), SteamFriends()->GetPersonaName(), (int)SteamUser()->BLoggedOn(), SteamApps()->GetCurrentGameLanguage());
 	INFO("owns app: subscribed %d, subscribed app %d, build id %d", (int)SteamApps()->BIsSubscribed(), (int)SteamApps()->BIsSubscribedApp(appId), SteamApps()->GetAppBuildId());
-	INFO("overlay: enabled in Steam %d, GameOverlayRenderer.dll loaded in this process %d, launched by Steam %d, big picture %d, steam hardware %d", (int)SteamUtils()->IsOverlayEnabled(), GetModuleHandleW(L"GameOverlayRenderer.dll") != nullptr, (int)g_launchedBySteam, (int)SteamUtils()->IsSteamInBigPictureMode(), (int)SteamUtils()->IsRunningOnSteamHardware());
+	INFO("overlay: enabled in Steam %d, GameOverlayRenderer.dll loaded in this process %d, launched by Steam %d, big picture %d, steam hardware %d", (int)SteamUtils()->IsOverlayEnabled(), GetModuleHandleW(L"GameOverlayRenderer.dll") != nullptr, (int)g_launchedBySteam, (int)SteamUtils()->IsSteamInBigPictureMode(), SteamHandheld());
 	INFO("cloud: account %d, app %d", (int)SteamRemoteStorage()->IsCloudEnabledForAccount(), (int)SteamRemoteStorage()->IsCloudEnabledForApp());
 	uint64 quotaTotal = 0;
 	uint64 quotaFree = 0;
