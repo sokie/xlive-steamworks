@@ -366,9 +366,15 @@ void HandleQosProbe(CSteamID from, const QosProbe* probe)
 		if (listener != g_qosListeners.end()) {
 			listener->second.stats.dwNumProbesReceived++;
 		}
+		if (probe->sequence == 0) {
+			XLS_LOG_DEBUG("qos: %llu probed session %016llx, which has no enabled listener here.", from.ConvertToUint64(), KidToInt(probe->xnkid));
+		}
 	}
 	else {
 		QosListener& state = listener->second;
+		if (probe->sequence == 0) {
+			XLS_LOG_DEBUG("qos: answering %llu for session %016llx with %zu data bytes.", from.ConvertToUint64(), KidToInt(probe->xnkid), state.data.size());
+		}
 		state.stats.dwNumProbesReceived++;
 		state.stats.dwNumDataRequestsReceived++;
 		reply.dataSize = (uint16_t)std::min<size_t>(state.data.size(), 0xFFFF);
@@ -440,6 +446,9 @@ void FinishQosTarget(QosLookup* lookup, size_t index)
 	// Steam relays are not bandwidth probed so report a healthy link.
 	info.dwUpBitsPerSec = 4 * 1024 * 1024;
 	info.dwDnBitsPerSec = 8 * 1024 * 1024;
+	if (!target.isService) {
+		XLS_LOG_DEBUG("qos: %llu done, flags 0x%02x, %u of %u probes answered, median %u ms, %u data bytes.", target.steamId.ConvertToUint64(), info.bFlags, info.cProbesRecv, info.cProbesXmit, info.wRttMedInMsecs, info.cbData);
+	}
 	if (lookup->result->cxnqosPending) {
 		lookup->result->cxnqosPending--;
 	}
@@ -1104,10 +1113,14 @@ INT NetQosListen(const XNKID& xnkid, const uint8_t* data, UINT size, DWORD bitsP
 	std::lock_guard<std::recursive_mutex> lock(g_mutex);
 	uint64_t key = KidToInt(xnkid);
 	if (flags & XNET_QOS_LISTEN_RELEASE) {
+		XLS_LOG_DEBUG("qos: listener for session %016llx released.", key);
 		g_qosListeners.erase(key);
 		return 0;
 	}
 	QosListener& listener = g_qosListeners[key];
+	if ((flags & (XNET_QOS_LISTEN_ENABLE | XNET_QOS_LISTEN_DISABLE)) || ((flags & XNET_QOS_LISTEN_SET_DATA) && listener.data.size() != (data ? size : 0))) {
+		XLS_LOG_DEBUG("qos: listener for session %016llx: flags 0x%x, %u data bytes.", key, flags, data ? size : 0);
+	}
 	if (flags & XNET_QOS_LISTEN_SET_DATA) {
 		listener.data.assign(data, data + (data ? size : 0));
 	}
@@ -1156,6 +1169,10 @@ INT NetQosLookup(UINT count, const XNADDR* xnaddrs[], const XNKID* xnkids[], con
 			// Not one of ours, finish it as unreachable right away.
 			target.complete = false;
 			target.disabled = true;
+			XLS_LOG_DEBUG("qos: target %u is not a Steam peer, reported as unreachable.", i);
+		}
+		else {
+			XLS_LOG_DEBUG("qos: probing %llu for session %016llx, %u probes.", target.steamId.ConvertToUint64(), KidToInt(target.xnkid), lookup->probeCount);
 		}
 		lookup->targets.push_back(target);
 	}
