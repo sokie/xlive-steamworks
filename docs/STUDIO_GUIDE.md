@@ -135,12 +135,15 @@ with the drop-in dll but loads them with `GetProcAddress`.
   strict NATs get. `XlsPeerConnectionInfo` and `XlsSocketConnectionInfo` report which path a
   connection took.
 - `XLiveUninitialize` calls `SteamAPI_Shutdown` only when the process never addressed a peer.
-  After online play the Steam API is left up until the process exits: closed peer connections
-  keep handshaking on Steam's networking thread for a few seconds, and shutting the API down
-  under them crashes inside Steam. Process exit
-  ends that thread first. `steam.shutdown_api` = false skips the call in every case.
-- Voice works out of the box, played through waveOut with one stream per talker. Titles that
-  route XHV output through their own audio graph get the same PCM only if that graph is bypassed.
+  After online play the Steam API stays up until the process exits. Closed peer connections keep
+  handshaking on Steam's networking thread for a few seconds, and shutting the API down under
+  them crashes inside Steam. Process exit ends that thread first. `steam.shutdown_api` = false
+  skips the call in every case.
+- Voice needs no setup. Remote talkers play through waveOut, one stream each. The wrapper does
+  not feed the decoded PCM into the title's own audio graph.
+- Steam Cloud is used only when the app reports an API quota. An app with Cloud switched on but
+  no quota accepts writes that are gone on the next start, so such apps keep every file in
+  `xlive-storage\<account id>\` next to the exe from the first write.
 - `XStorage*` reads of other players' files fail with file-not-found since Steam Cloud is per
   account. Titles that shared ghosts or replays that way need Steam UGC, outside this wrapper.
 
