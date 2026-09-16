@@ -540,6 +540,13 @@ DWORD WINAPI XShowPlayersUI(DWORD dwUserIndex)
 DWORD WINAPI XShowFriendsUI(DWORD dwUserIndex)
 {
 	XLS_TRACE_FN();
+	// Ingame invite actions calls steam invite dialog if a session exists, 
+	//  or the plain friends page otherwise.
+	CSteamID lobby = xls::SessionPresenceLobby();
+	if (lobby.IsValid() && xls::SteamReady() && xls::SteamFriends()) {
+		xls::SteamFriends()->ActivateGameOverlayInviteDialog(lobby);
+		return ERROR_SUCCESS;
+	}
 	OverlayPage("Friends");
 	return ERROR_SUCCESS;
 }

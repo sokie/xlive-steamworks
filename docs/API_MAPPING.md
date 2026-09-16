@@ -147,7 +147,8 @@ Kinds:
 
 | Export | Kind | Steam side / behaviour |
 | --- | --- | --- |
-| XShowGuideUI, XShowFriendsUI, XShowMessagesUI | 1:1 | `ActivateGameOverlay("Friends")` |
+| XShowGuideUI, XShowMessagesUI | 1:1 | `ActivateGameOverlay("Friends")` |
+| XShowFriendsUI | middle | `ActivateGameOverlayInviteDialog(lobby)` while a presence session exists, else the Friends page |
 | XShowAchievementsUI | 1:1 | `ActivateGameOverlay("Achievements")` |
 | XShowPlayersUI, XShowCustomPlayerListUI | 1:1 / stub | `ActivateGameOverlay("Players")`, the custom list reports cancel |
 | XShowGamerCardUI, XShowPlayerReviewUI | 1:1 | `ActivateGameOverlayToUser("steamid")` |
