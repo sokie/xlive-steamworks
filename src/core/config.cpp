@@ -155,6 +155,7 @@ bool ConfigLoad()
 			config.appId = steam["app_id"].GetUint32(0);
 			config.restartAppIfNecessary = steam["restart_app_if_necessary"].GetBool(false);
 			config.requireSteam = steam["required"].GetBool(true);
+			config.steamShutdownApi = steam["shutdown_api"].GetBool(true);
 			config.asyncTimeoutMs = steam["async_timeout_ms"].GetUint32(15000);
 
 			const Json& title = root["title"];
