@@ -58,6 +58,7 @@ const int kControlChannel = 0x10000;           // Above every UDP port.
 const uint32_t kXnaddrMagic = 0x53544D57;      // 'STMW' in abOnline, after the Steam id.
 const size_t kMaxQueuedDatagrams = 512;
 const DWORD kQosProbeTimeoutMs = 3000;
+const DWORD kQosWarmupMs = 2500;
 const uint8_t kQosDefaultProbes = 8;
 
 // --- Secure address table ------------------------------------------------------------------------
@@ -130,6 +131,8 @@ struct QosTarget {
 	bool dataReceived = false;
 	bool disabled = false;
 	bool complete = false;
+	bool sessionReady = false;
+	bool warmSent = false;
 };
 
 struct QosLookup {
@@ -140,6 +143,7 @@ struct QosLookup {
 	uint8_t probeCount = kQosDefaultProbes;
 	uint8_t nextSequence = 0;
 	DWORD lastProbeTick = 0;
+	DWORD probeStartTick = 0;
 };
 
 std::map<uint64_t, QosListener> g_qosListeners;
@@ -161,6 +165,7 @@ struct XlsSocket {
 	uint16_t port = 0;
 	bool nonBlocking = false;
 	bool broadcast = false;
+	bool noDelay = false;
 	DWORD receiveTimeoutMs = 0;
 	DWORD sendTimeoutMs = 0;
 	DWORD receiveBufferSize = 16 * 1024;
@@ -445,9 +450,35 @@ void FinishQosTarget(QosLookup* lookup, size_t index)
 void PumpQos()
 {
 	DWORD now = GetTickCount();
+	ISteamNetworkingMessages* messages = SteamReady() ? SteamNetworkingMessages() : nullptr;
 	for (QosLookup* lookup : g_qosLookups) {
 		if (!lookup->result->cxnqosPending) {
 			continue;
+		}
+		if (!lookup->probeStartTick) {
+			// A probe sent while Steam is still opening the session would time the handshake, not
+			// the link, so the first round waits for the sessions, up to kQosWarmupMs.
+			bool ready = true;
+			for (QosTarget& target : lookup->targets) {
+				if (target.isService || target.complete || target.sessionReady) {
+					continue;
+				}
+				SteamNetConnectionInfo_t info = {};
+				if (messages && messages->GetSessionConnectionInfo(IdentityOf(target.steamId), &info, nullptr) == k_ESteamNetworkingConnectionState_Connected) {
+					target.sessionReady = true;
+					continue;
+				}
+				if (!target.warmSent) {
+					DatagramHeader header = { kDatagramData, 1, 0 };
+					SendControl(target.steamId, &header, sizeof(header), true);
+					target.warmSent = true;
+				}
+				ready = false;
+			}
+			if (!ready && now - lookup->startedTick < kQosWarmupMs) {
+				continue;
+			}
+			lookup->probeStartTick = now;
 		}
 		bool sendRound = lookup->nextSequence < lookup->probeCount && (lookup->nextSequence == 0 || now - lookup->lastProbeTick >= 50);
 		for (size_t i = 0; i < lookup->targets.size(); i++) {
@@ -469,7 +500,7 @@ void PumpQos()
 				target.probesSent++;
 			}
 			bool allReplied = target.probesReceived >= lookup->probeCount;
-			bool timedOut = now - lookup->startedTick > kQosProbeTimeoutMs;
+			bool timedOut = now - lookup->probeStartTick > kQosProbeTimeoutMs;
 			if (allReplied || timedOut) {
 				FinishQosTarget(lookup, i);
 			}
@@ -752,6 +783,11 @@ void NetInit()
 		if (g_p2pTransportSet) {
 			ApplyP2PTransport();
 		}
+		if (Cfg().sendRateKBytes && SteamNetworkingUtils()) {
+			SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMin, (int32)(Cfg().sendRateKBytes * 1024));
+			SteamNetworkingUtils()->SetGlobalConfigValueInt32(k_ESteamNetworkingConfig_SendRateMax, (int32)(Cfg().sendRateKBytes * 1024));
+			XLS_LOG_INFO("net: send rate %u KB/s per peer.", Cfg().sendRateKBytes);
+		}
 	}
 	else {
 		memset(&g_localXnaddr, 0, sizeof(g_localXnaddr));
@@ -787,6 +823,14 @@ void NetShutdown()
 	g_qosLookups.clear();
 	g_qosListeners.clear();
 	g_keys.clear();
+	// Sessions left open would still be signalling through the Steam pipe after SteamAPI_Shutdown.
+	if (SteamReady() && SteamNetworkingMessages()) {
+		for (const auto& entry : g_aliasBySteamId) {
+			if (entry.second != kLocalAlias) {
+				SteamNetworkingMessages()->CloseSessionWithUser(IdentityOf(CSteamID(entry.first)));
+			}
+		}
+	}
 	g_secure.clear();
 	g_aliasBySteamId.clear();
 	g_aliasByServer.clear();
@@ -1261,6 +1305,9 @@ int NetSocketSetOpt(SOCKET s, int level, int name, const char* value, int length
 			case SO_SNDTIMEO: socket->sendTimeoutMs = *(const DWORD*)value; break;
 			default: break;
 		}
+	}
+	else if (level == IPPROTO_TCP && name == TCP_NODELAY) {
+		socket->noDelay = *(const BOOL*)value != 0;
 	}
 	if (socket->real != INVALID_SOCKET) {
 		setsockopt(socket->real, level, name, value, length);
@@ -1770,7 +1817,8 @@ int NetSocketSend(SOCKET s, const char* buffer, int length, int flags)
 	if (length == 0) {
 		return 0;
 	}
-	EResult result = SteamNetworkingSockets()->SendMessageToConnection(socket->connection, buffer, (uint32)length, k_nSteamNetworkingSend_ReliableNoNagle, nullptr);
+	int sendFlags = socket->noDelay ? k_nSteamNetworkingSend_ReliableNoNagle : k_nSteamNetworkingSend_Reliable;
+	EResult result = SteamNetworkingSockets()->SendMessageToConnection(socket->connection, buffer, (uint32)length, sendFlags, nullptr);
 	if (result == k_EResultOK) {
 		return length;
 	}

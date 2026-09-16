@@ -232,6 +232,11 @@ void SteamStop()
 	g_ready = false;
 	delete g_bridge;
 	g_bridge = nullptr;
+	// Lets the close handshakes of peer sessions leave before the pipe goes away.
+	for (int i = 0; i < 5; i++) {
+		SteamAPI_RunCallbacks();
+		Sleep(20);
+	}
 	if (!g_ownedByTitle) {
 		SteamAPI_Shutdown();
 	}
