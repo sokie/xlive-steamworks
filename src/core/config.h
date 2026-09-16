@@ -50,6 +50,7 @@ struct Config {
 	uint32_t appId = 0;                 // 0 = whatever steam_api resolves (steam_appid.txt or launcher).
 	bool restartAppIfNecessary = false; // SteamAPI_RestartAppIfNecessary(appId) before init.
 	bool requireSteam = true;           // false = keep running signed-out when Steam is absent.
+	bool steamShutdownApi = true;       // SteamAPI_Shutdown on XLiveUninitialize when no peer was ever addressed.
 
 	// Title identity.
 	uint32_t titleId = 0;               // 0 = from the SPA.

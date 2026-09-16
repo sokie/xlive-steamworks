@@ -11,6 +11,7 @@
 		"app_id": 0,                        // 0 = steam_appid.txt / Steam launcher
 		"restart_app_if_necessary": false,  // SteamAPI_RestartAppIfNecessary before init
 		"required": true,                   // show a warning when Steam is not running
+		"shutdown_api": true,               // SteamAPI_Shutdown on XLiveUninitialize, skipped anyway after online play (see the studio guide)
 		"async_timeout_ms": 15000           // how long a synchronous X* call waits on Steam
 	},
 
