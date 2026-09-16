@@ -140,7 +140,9 @@ cmake --build build --config Release
 - GFWL titles are 32-bit, so build with `-A Win32`. A 64-bit build works and links
   `steam_api64`.
 - Without `STEAMWORKS_SDK_DIR` the rlabrecque mirror of the SDK is fetched at the pinned
-  revision (v1.65).
+  revision (v1.65). The code builds against SDK 1.62 and newer. On Linux, Proton's
+  `lsteamclient` bridges the Windows `steam_api.dll` to the native client and knows SDK 1.65
+  from Proton 10 on. Proton 9 stops at 1.62, so a title that must run there builds against 1.62.
 - `-DXLS_BUILD_STATIC=ON` produces `xlive.lib` for linking into a title. The def file is not used
   in that configuration.
 - The runtime is the static CRT. The dll depends on `steam_api.dll`, `ws2_32`, `winmm`,

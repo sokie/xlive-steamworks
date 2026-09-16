@@ -268,7 +268,15 @@ std::shared_ptr<DialogRequest> g_gamepadRequest;
 
 bool UseGamepadTextInput()
 {
-	return xls::SteamReady() && xls::SteamUtils() && (xls::SteamUtils()->IsSteamInBigPictureMode() || xls::SteamUtils()->IsRunningOnSteamHardware() != k_ESteamHardwareTypeNone);
+	if (!xls::SteamReady() || !xls::SteamUtils()) {
+		return false;
+	}
+#if XLS_STEAM_HARDWARE_API
+	bool handheld = xls::SteamUtils()->IsRunningOnSteamHardware() != k_ESteamHardwareTypeNone;
+#else
+	bool handheld = xls::SteamUtils()->IsSteamRunningOnSteamDeck();
+#endif
+	return xls::SteamUtils()->IsSteamInBigPictureMode() || handheld;
 }
 
 void OverlayPage(const char* page)
