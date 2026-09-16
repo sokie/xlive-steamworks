@@ -595,6 +595,7 @@ void SessionsShutdown()
 	for (auto& entry : g_sessions) {
 		if (entry.second->lobby.IsValid() && SteamReady() && !entry.second->deleted) {
 			SteamMatchmaking()->LeaveLobby(entry.second->lobby);
+			XLS_LOG_INFO("session: left lobby %llu (shutdown).", entry.second->lobby.ConvertToUint64());
 		}
 		CloseHandle(entry.first);
 	}
@@ -617,6 +618,7 @@ bool SessionCloseHandle(HANDLE session)
 	}
 	if (!it->second->deleted && it->second->lobby.IsValid() && SteamReady()) {
 		SteamMatchmaking()->LeaveLobby(it->second->lobby);
+		XLS_LOG_INFO("session: left lobby %llu (handle closed).", it->second->lobby.ConvertToUint64());
 	}
 	g_sessions.erase(it);
 	CloseHandle(session);
@@ -739,7 +741,10 @@ void OnLobbyChatUpdate(const LobbyChatUpdate_t& update)
 	else if (BChatMemberStateChangeRemoved(update.m_rgfChatMemberStateChange)) {
 		XLS_LOG_DEBUG("session: %llu left lobby %llu.", changed.ConvertToUint64(), update.m_ulSteamIDLobby);
 		if (!session->host && SteamMatchmaking()->GetLobbyOwner(session->lobby) == SteamLocalId()) {
-			XLS_LOG_INFO("session: this machine now owns lobby %llu.", update.m_ulSteamIDLobby);
+			// Live drops a session from searches once its host deletes it so the migrated host's
+			// publish makes the lobby joinable again.
+			SteamMatchmaking()->SetLobbyJoinable(session->lobby, false);
+			XLS_LOG_INFO("session: this machine now owns lobby %llu, it stays out of searches until a host migrates to it.", update.m_ulSteamIDLobby);
 		}
 		SettleLobbyOwnership(*session);
 	}
@@ -1062,6 +1067,7 @@ DWORD WINAPI XSessionLeaveLocal(HANDLE hSession, DWORD dwUserCount, const DWORD*
 		session->members.erase(std::remove_if(session->members.begin(), session->members.end(), [xuid](const Member& m) { return m.xuid == xuid; }), session->members.end());
 		if (pdwUserIndexes[i] == 0 && !session->host && !session->deleted && session->lobby.IsValid() && xls::SteamReady()) {
 			xls::SteamMatchmaking()->LeaveLobby(session->lobby);
+			XLS_LOG_INFO("session: left lobby %llu (local user left).", session->lobby.ConvertToUint64());
 			session->deleted = true;
 			PublishRichPresenceConnect(nullptr);
 		}
