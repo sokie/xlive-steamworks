@@ -48,6 +48,14 @@ else()
     set(STEAM_API_DLL "${STEAMWORKS_SDK_DIR}/redistributable_bin/steam_api.dll")
 endif()
 
+# SDK 1.63 replaced IsSteamRunningOnSteamDeck with IsRunningOnSteamHardware, 1.62 still builds.
+file(STRINGS "${STEAMWORKS_SDK_DIR}/public/steam/isteamutils.h" xls_steam_hardware REGEX "IsRunningOnSteamHardware")
+if(xls_steam_hardware)
+    set(XLS_STEAM_HARDWARE_API 1)
+else()
+    set(XLS_STEAM_HARDWARE_API 0)
+endif()
+
 add_library(steam_api SHARED IMPORTED)
 set_target_properties(steam_api PROPERTIES
     IMPORTED_IMPLIB "${STEAM_API_LIB}"
@@ -96,6 +104,7 @@ target_compile_definitions(xlive PRIVATE
     "XLS_VERSION_MAJOR=${PROJECT_VERSION_MAJOR}"
     "XLS_VERSION_MINOR=${PROJECT_VERSION_MINOR}"
     "XLS_VERSION_PATCH=${PROJECT_VERSION_PATCH}"
+    "XLS_STEAM_HARDWARE_API=${XLS_STEAM_HARDWARE_API}"
 )
 
 target_compile_options(xlive PRIVATE
@@ -136,7 +145,7 @@ if(XLS_BUILD_TESTS AND NOT XLS_BUILD_STATIC)
         CXX_STANDARD 17
         RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/bin/$<0:>"
     )
-    target_compile_definitions(xlive_smoke PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS)
+    target_compile_definitions(xlive_smoke PRIVATE UNICODE _UNICODE WIN32_LEAN_AND_MEAN NOMINMAX _CRT_SECURE_NO_WARNINGS "XLS_STEAM_HARDWARE_API=${XLS_STEAM_HARDWARE_API}")
     target_link_options(xlive_smoke PRIVATE /SUBSYSTEM:CONSOLE)
 endif()
 

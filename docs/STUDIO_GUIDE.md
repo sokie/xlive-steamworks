@@ -147,6 +147,11 @@ with the drop-in dll but loads them with `GetProcAddress`.
   `xlive-storage\<account id>\` next to the exe from the first write.
 - `XStorage*` reads of other players' files fail with file-not-found since Steam Cloud is per
   account. Titles that shared ghosts or replays that way need Steam UGC, outside this wrapper.
+- Linux runs through Proton unchanged: the wrapper depends on Win32 and `steam_api.dll` only,
+  and Proton's `lsteamclient` bridges that dll to the native Steam client (SDK 1.65 from Proton
+  10 on, 1.62 in Proton 9, the README covers choosing the SDK). The overlay is Steam's own and
+  is not shipped with the wrapper. Launch the title through Steam so the app id and the overlay
+  come from the client.
 
 ## 7. Building
 
