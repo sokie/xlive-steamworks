@@ -153,16 +153,12 @@ cmake --build build --config Release
   `--query "4:0x10000056=9,..."` runs an XLAST query of the loaded SPA and logs the filters sent,
   `--voice` runs the voice engine in loopback, and `--pair-host CODE` / `--pair-join CODE`
   (`--relay-only`) run the two-machine network test that the packer builds.
-- For a game owner to test end to end, the owner packer packs `bin/sfxt-owner-kit.zip`:
-  a standalone probe plus a drop-in wrapper for the GFWL build, with numbered scripts that run the
-  probe, back up and swap `xlive.dll` in the game folder, launch the game, collect the debug log and
-  system info, and zip it all back. The GFWL build of SFxT imports only `xlive.dll`, so the kit does
-  not touch any existing `steam_api.dll`. The Steam build keeps its own 2012 `steam_api.dll` and is
-  not a target (its 1.20 flat exports are gone from the 1.65 dll the wrapper needs).
+- Per-title drop-in folders and owner test kits live in the companion repository
+  [xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games).
 - `xlive_smoke.exe --probe` reports what a Steam app offers (ownership, achievement schema, Cloud,
   DLC, relay, leaderboards) without creating anything on it. the probe packer
-  packs it as `bin/xlive-probe-<id>.zip` for another owner of the app to run and send back
-  `probe_report.txt`.
+  [-Title "Name"]` packs it as `bin/xlive-probe-<id>.zip` for another owner of the app to run
+  and send back `probe-results.zip`.
 
 Layout:
 
