@@ -1,6 +1,7 @@
 // #5261 - #5267, #5276, #5277, #5288 - #5293, #5303, #5314, #5377: user identity, contexts and
 // properties.
 #include "xlive/xfuncs.h"
+#include "api/xsession.h"
 
 #include "core/log.h"
 #include "core/overlapped.h"
@@ -141,6 +142,7 @@ void WINAPI XUserSetProperty(DWORD dwUserIndex, DWORD dwPropertyId, DWORD cbValu
 		return;
 	}
 	xls::UserSetProperty(dwUserIndex, dwPropertyId, pvValue, cbValue);
+	xls::OnUserPropertyChanged(dwUserIndex, dwPropertyId);
 }
 
 // #5293
@@ -154,6 +156,7 @@ DWORD WINAPI XUserSetPropertyEx(DWORD dwUserIndex, DWORD dwPropertyId, DWORD cbV
 		return ERROR_INVALID_PARAMETER;
 	}
 	xls::UserSetProperty(dwUserIndex, dwPropertyId, pvValue, cbValue);
+	xls::OnUserPropertyChanged(dwUserIndex, dwPropertyId);
 	return xls::OverlappedReturn(pOverlapped, ERROR_SUCCESS);
 }
 
@@ -165,6 +168,7 @@ void WINAPI XUserSetContext(DWORD dwUserIndex, DWORD dwContextId, DWORD dwContex
 		return;
 	}
 	xls::UserSetContext(dwUserIndex, dwContextId, dwContextValue);
+	xls::OnUserContextChanged(dwUserIndex, dwContextId, dwContextValue);
 }
 
 // #5292
@@ -175,6 +179,7 @@ DWORD WINAPI XUserSetContextEx(DWORD dwUserIndex, DWORD dwContextId, DWORD dwCon
 		return ERROR_NO_SUCH_USER;
 	}
 	xls::UserSetContext(dwUserIndex, dwContextId, dwContextValue);
+	xls::OnUserContextChanged(dwUserIndex, dwContextId, dwContextValue);
 	return xls::OverlappedReturn(pOverlapped, ERROR_SUCCESS);
 }
 
