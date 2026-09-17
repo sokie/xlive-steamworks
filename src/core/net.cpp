@@ -419,8 +419,16 @@ void FinishQosTarget(QosLookup* lookup, size_t index)
 	target.complete = true;
 	XNQOSINFO& info = lookup->result->axnqosinfo[index];
 	info.bFlags = XNET_XNQOSINFO_COMPLETE;
-	info.cProbesXmit = target.probesSent;
-	info.cProbesRecv = target.probesReceived;
+	if (target.isService) {
+		// The service is reported reachable without real probes. A title divides one probe count
+		// by the other (cProbesXmit / cProbesRecv), so a service must report at least one of each.
+		info.cProbesXmit = 1;
+		info.cProbesRecv = 1;
+	}
+	else {
+		info.cProbesXmit = target.probesSent;
+		info.cProbesRecv = target.probesReceived;
+	}
 	if (target.probesReceived || target.isService) {
 		info.bFlags |= XNET_XNQOSINFO_TARGET_CONTACTED;
 	}
