@@ -131,15 +131,18 @@ void PublishSession(Session& session)
 	matchmaking->SetLobbyData(lobby, Key("gm").c_str(), xls::FormatA("%u", session.gameMode).c_str());
 	for (const auto& context : xls::UserContexts(session.userIndex)) {
 		matchmaking->SetLobbyData(lobby, ContextKey(context.first).c_str(), xls::FormatA("%u", context.second).c_str());
+		XLS_LOG_DEBUG("session: advertise context 0x%08x = %u.", context.first, context.second);
 	}
 	for (const auto& property : xls::UserProperties(session.userIndex)) {
 		if (property.second.type == XUSER_DATA_TYPE_BINARY && property.second.raw.size() > 2048) {
 			continue;
 		}
 		matchmaking->SetLobbyData(lobby, PropertyKey(property.first).c_str(), property.second.ToString().c_str());
+		XLS_LOG_DEBUG("session: advertise property 0x%08x = %s.", property.first, property.second.ToString().c_str());
 	}
 	bool joinable = session.state != XSESSION_STATE_INGAME || !(session.flags & XSESSION_CREATE_JOIN_IN_PROGRESS_DISABLED);
 	matchmaking->SetLobbyJoinable(lobby, joinable);
+	XLS_LOG_DEBUG("session: published lobby %llu, joinable %d.", lobby.ConvertToUint64(), (int)joinable);
 }
 
 void PublishRichPresenceConnect(const Session* session)
@@ -623,6 +626,48 @@ bool SessionCloseHandle(HANDLE session)
 	g_sessions.erase(it);
 	CloseHandle(session);
 	return true;
+}
+
+// Titles create a session with a few attributes and set the rest later through XUserSetContext and
+// XUserSetProperty. Steam lobby data is per key, so the host pushes just the changed key so lobby is up to date.
+void OnUserContextChanged(DWORD userIndex, DWORD contextId, DWORD value)
+{
+	std::lock_guard<std::recursive_mutex> lock(g_mutex);
+	if (!SteamReady()) {
+		return;
+	}
+	for (auto& entry : g_sessions) {
+		Session& session = *entry.second;
+		if (session.host && !session.deleted && session.userIndex == userIndex && session.lobby.IsValid() &&
+		    SteamMatchmaking()->GetLobbyOwner(session.lobby) == SteamLocalId()) {
+			SteamMatchmaking()->SetLobbyData(session.lobby, ContextKey(contextId).c_str(), xls::FormatA("%u", value).c_str());
+			XLS_LOG_DEBUG("session: advertise context 0x%08x = %u on lobby %llu (updated).", contextId, value, session.lobby.ConvertToUint64());
+		}
+	}
+}
+
+void OnUserPropertyChanged(DWORD userIndex, DWORD propertyId)
+{
+	std::lock_guard<std::recursive_mutex> lock(g_mutex);
+	if (!SteamReady()) {
+		return;
+	}
+	xls::StoredProperty stored;
+	if (!xls::UserGetProperty(userIndex, propertyId, &stored)) {
+		return;
+	}
+	if (stored.type == XUSER_DATA_TYPE_BINARY && stored.raw.size() > 2048) {
+		return;
+	}
+	std::string value = stored.ToString();
+	for (auto& entry : g_sessions) {
+		Session& session = *entry.second;
+		if (session.host && !session.deleted && session.userIndex == userIndex && session.lobby.IsValid() &&
+		    SteamMatchmaking()->GetLobbyOwner(session.lobby) == SteamLocalId()) {
+			SteamMatchmaking()->SetLobbyData(session.lobby, PropertyKey(propertyId).c_str(), value.c_str());
+			XLS_LOG_DEBUG("session: advertise property 0x%08x = %s on lobby %llu (updated).", propertyId, value.c_str(), session.lobby.ConvertToUint64());
+		}
+	}
 }
 
 CSteamID SessionPresenceLobby()
