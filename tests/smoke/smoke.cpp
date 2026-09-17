@@ -387,6 +387,22 @@ static void TestNetworkAndSession()
 	XNKID anyKey = {};
 	CHECK(XNetXnAddrToInAddr(&local, &anyKey, &alias) == 0, "XNetXnAddrToInAddr(local) -> %u.%u.%u.%u", alias.S_un.S_un_b.s_b1, alias.S_un.S_un_b.s_b2, alias.S_un.S_un_b.s_b3, alias.S_un.S_un_b.s_b4);
 
+	// A title divides the service probe counts, so both must be non-zero (Lost Planet 2 crashes otherwise).
+	XNQOS* serviceQos = nullptr;
+	if (XNetQosServiceLookup(0, nullptr, &serviceQos) == 0 && serviceQos) {
+		DWORD started = GetTickCount();
+		while (serviceQos->cxnqosPending && GetTickCount() - started < 5000) {
+			XLiveRender();
+			Sleep(10);
+		}
+		const XNQOSINFO& service = serviceQos->axnqosinfo[0];
+		CHECK(serviceQos->cxnqos >= 1 && service.cProbesXmit >= 1 && service.cProbesRecv >= 1, "XNetQosServiceLookup reports %u xmit / %u recv probe(s), flags 0x%02x", service.cProbesXmit, service.cProbesRecv, service.bFlags);
+		XNetQosRelease(serviceQos);
+	}
+	else {
+		CHECK(false, "XNetQosServiceLookup started");
+	}
+
 	SOCKET socket = XSocketCreate(AF_INET, SOCK_DGRAM, IPPROTO_UDP);
 	CHECK(socket != INVALID_SOCKET, "XSocketCreate");
 	sockaddr_in bind = {};
