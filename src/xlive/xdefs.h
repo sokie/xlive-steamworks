@@ -672,6 +672,10 @@ typedef struct _XSESSION_LOCAL_DETAILS {
 	XSESSION_MEMBER* pSessionMembers;
 } XSESSION_LOCAL_DETAILS, *PXSESSION_LOCAL_DETAILS;
 
+// Packed to 1: the titles' XDK lays this out with no trailing padding, so it is 0x54 bytes, not the
+// 0x58 that 8-byte alignment of the XUID members would give. A title reads it into a 0x54 stack
+// buffer, so an over-sized copy overruns the stack.
+#pragma pack(push, 1)
 typedef struct _XINVITE_INFO {
 	XUID xuidInvitee;
 	XUID xuidInviter;
@@ -679,6 +683,8 @@ typedef struct _XINVITE_INFO {
 	XSESSION_INFO hostInfo;
 	BOOL fFromGameInvite;
 } XINVITE_INFO, *PXINVITE_INFO;
+#pragma pack(pop)
+static_assert(sizeof(XINVITE_INFO) == 0x54, "XINVITE_INFO must be 0x54 bytes to match the XDK ABI");
 
 // --- Stats ---------------------------------------------------------------------------------------
 
