@@ -15,6 +15,27 @@ namespace {
 
 bool g_xnetStarted = false;
 XNetStartupParams g_startupParams = {};
+
+// Seeds the parameters the secure network library applies to every field a title leaves at zero.
+// A title sizes its QoS listen data from cfgQosDataLimitDiv4, so a zero there cuts that data to
+// nothing.
+void ResetStartupParams()
+{
+	memset(&g_startupParams, 0, sizeof(g_startupParams));
+	g_startupParams.cfgSizeOfStruct = sizeof(XNetStartupParams);
+	g_startupParams.cfgSockMaxDgramSockets = 8;
+	g_startupParams.cfgSockMaxStreamSockets = 32;
+	g_startupParams.cfgSockDefaultRecvBufsizeInK = 16;
+	g_startupParams.cfgSockDefaultSendBufsizeInK = 16;
+	g_startupParams.cfgKeyRegMax = 8;
+	g_startupParams.cfgSecRegMax = 32;
+	g_startupParams.cfgQosDataLimitDiv4 = 64;
+	g_startupParams.cfgQosProbeTimeoutInSeconds = 2;
+	g_startupParams.cfgQosProbeRetries = 3;
+	g_startupParams.cfgQosSrvMaxSimultaneousResponses = 8;
+	g_startupParams.cfgQosPairWaitTimeInSeconds = 2;
+}
+
 WORD g_systemLinkPort = 0;
 WORD g_onlinePort = 0;
 bool g_onlineStarted = false;
@@ -65,13 +86,20 @@ INT WINAPI XNetStartup(const XNetStartupParams* pxnsp)
 INT WINAPI XNetStartupEx(const XNetStartupParams* pxnsp, DWORD dwVersionReq)
 {
 	XLS_TRACE_FN();
+	ResetStartupParams();
 	if (pxnsp && pxnsp->cfgSizeOfStruct == sizeof(XNetStartupParams)) {
-		g_startupParams = *pxnsp;
+		const uint8_t* given = (const uint8_t*)pxnsp;
+		uint8_t* effective = (uint8_t*)&g_startupParams;
+		for (size_t i = 1; i < sizeof(XNetStartupParams); i++) {
+			if (given[i]) {
+				effective[i] = given[i];
+			}
+		}
 	}
-	else {
-		memset(&g_startupParams, 0, sizeof(g_startupParams));
-		g_startupParams.cfgSizeOfStruct = sizeof(XNetStartupParams);
-	}
+	XLS_LOG_DEBUG("xnet: startup params: flags 0x%02x, %u dgram %u stream sockets, %uK recv %uK send, %u keys %u sec, qos data %u bytes.",
+		g_startupParams.cfgFlags, g_startupParams.cfgSockMaxDgramSockets, g_startupParams.cfgSockMaxStreamSockets,
+		g_startupParams.cfgSockDefaultRecvBufsizeInK, g_startupParams.cfgSockDefaultSendBufsizeInK,
+		g_startupParams.cfgKeyRegMax, g_startupParams.cfgSecRegMax, g_startupParams.cfgQosDataLimitDiv4 * 4u);
 	xls::NetInit();
 	g_xnetStarted = true;
 	return 0;
@@ -81,6 +109,7 @@ INT WINAPI XNetStartupEx(const XNetStartupParams* pxnsp, DWORD dwVersionReq)
 INT WINAPI XNetCleanup()
 {
 	XLS_TRACE_FN();
+	ResetStartupParams();
 	g_xnetStarted = false;
 	return 0;
 }
