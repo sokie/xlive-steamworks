@@ -42,6 +42,10 @@ if(NOT EXISTS "${STEAMWORKS_SDK_DIR}/public/steam/steam_api.h")
     message(FATAL_ERROR "Steamworks SDK not found at '${STEAMWORKS_SDK_DIR}' (expected public/steam/steam_api.h).")
 endif()
 
+if(NOT CMAKE_SOURCE_DIR STREQUAL CMAKE_CURRENT_SOURCE_DIR)
+    set(STEAMWORKS_SDK_DIR "${STEAMWORKS_SDK_DIR}" PARENT_SCOPE)
+endif()
+
 if(CMAKE_SIZEOF_VOID_P EQUAL 8)
     set(STEAM_API_LIB "${STEAMWORKS_SDK_DIR}/redistributable_bin/win64/steam_api64.lib")
     set(STEAM_API_DLL "${STEAMWORKS_SDK_DIR}/redistributable_bin/win64/steam_api64.dll")
