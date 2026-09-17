@@ -29,8 +29,6 @@ set(STEAMWORKS_SDK_GIT_TAG "34d9338aa892213861bd9f84c4dd9c5b7fd23de7" CACHE STRI
 
 if(NOT STEAMWORKS_SDK_DIR)
     include(cmake/CPM.cmake)
-    # No GIT_SHALLOW: the pin is a commit that is not the default branch tip, and a shallow clone
-    # fetches only the tip, so the checkout of the pinned commit would fail.
     CPMAddPackage(
         NAME SteamworksSDK
         GITHUB_REPOSITORY rlabrecque/SteamworksSDK

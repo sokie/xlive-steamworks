@@ -53,7 +53,7 @@ public:
 		Write16(classAtom);
 		WriteString(text);
 		Write16(0);
-		m_data[m_countOffset / 2]++;
+		m_data[m_countOffset]++;
 	}
 
 	const DLGTEMPLATE* Get() { Align(); return (const DLGTEMPLATE*)m_data.data(); }
