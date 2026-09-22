@@ -75,8 +75,8 @@ std::recursive_mutex g_mutex;
 std::map<uint32_t, SecureEntry> g_secure;   // Keyed by alias in host order.
 std::map<uint64_t, uint32_t> g_aliasBySteamId;
 std::map<uint64_t, uint32_t> g_aliasByServer; // (ip << 32 | serviceId)
-uint32_t g_nextAlias = 0x0A000002;           // 10.0.0.2, since 10.0.0.1 is the local machine.
-const uint32_t kLocalAlias = 0x0A000001;
+uint32_t g_nextAlias = 0xAC100001;           // Title servers, kept out of the 10.x peer range.
+uint32_t g_localAlias = 0x0A000001;          // NetInit replaces it with this account's address.
 
 std::map<uint64_t, XNKEY> g_keys;            // XNKID as 64-bit.
 
@@ -97,6 +97,14 @@ IN_ADDR AliasToInAddr(uint32_t alias)
 	IN_ADDR result;
 	result.S_un.S_addr = htonl(alias);
 	return result;
+}
+
+// The secure address of an account: the same on every machine, and equal to the ina and inaOnline
+// in its XNADDR, so a title that keys peers on the XNADDR address matches their packets. The
+// private 10.x form keeps it plausible to a title that prints or validates it.
+uint32_t AliasForAccount(uint32_t account)
+{
+	return 0x0A000000 | (account & 0x00FFFFFF);
 }
 
 bool ResolveAlias(IN_ADDR address, SecureEntry* entry)
@@ -285,8 +293,7 @@ void BuildXnaddr(CSteamID steamId, XNADDR* out)
 {
 	memset(out, 0, sizeof(*out));
 	uint32_t account = steamId.GetAccountID();
-	// A private-range pseudo address, so titles that print or compare it see a plausible value.
-	out->ina.S_un.S_addr = htonl(0x0A000000 | (account & 0x00FFFFFF));
+	out->ina = AliasToInAddr(AliasForAccount(account));
 	out->inaOnline = out->ina;
 	out->wPortOnline = 0;
 	// The MAC is what titles compare to tell peers apart, so it must be unique per account.
@@ -802,9 +809,9 @@ void NetInit()
 	WSAStartup(MAKEWORD(2, 2), &wsaData);
 	if (SteamReady()) {
 		BuildXnaddr(SteamLocalId(), &g_localXnaddr);
-		g_localXnaddr.ina = LocalLanAddress();
-		g_secure[kLocalAlias] = SecureEntry{ false, SteamLocalId(), {}, 0, XNET_CONNECT_STATUS_CONNECTED };
-		g_aliasBySteamId[SteamLocalId().ConvertToUint64()] = kLocalAlias;
+		g_localAlias = AliasOf(g_localXnaddr.ina);
+		g_secure[g_localAlias] = SecureEntry{ false, SteamLocalId(), {}, 0, XNET_CONNECT_STATUS_CONNECTED };
+		g_aliasBySteamId[SteamLocalId().ConvertToUint64()] = g_localAlias;
 		if (Cfg().relayOnly && !g_p2pTransportSet) {
 			g_p2pTransport = k_nSteamNetworkingConfig_P2P_Transport_ICE_Enable_Disable;
 			g_p2pTransportSet = true;
@@ -824,8 +831,10 @@ void NetInit()
 		g_localXnaddr.inaOnline = g_localXnaddr.ina;
 	}
 	g_started = true;
-	const uint8_t* lan = (const uint8_t*)&g_localXnaddr.ina.S_un.S_addr;
-	XLS_LOG_INFO("net: started with local alias 10.0.0.1 and lan %u.%u.%u.%u.", lan[0], lan[1], lan[2], lan[3]);
+	IN_ADDR lanAddress = LocalLanAddress();
+	const uint8_t* local = (const uint8_t*)&g_localXnaddr.ina.S_un.S_addr;
+	const uint8_t* lan = (const uint8_t*)&lanAddress.S_un.S_addr;
+	XLS_LOG_INFO("net: started with local address %u.%u.%u.%u and lan %u.%u.%u.%u.", local[0], local[1], local[2], local[3], lan[0], lan[1], lan[2], lan[3]);
 }
 
 void NetShutdown()
@@ -855,7 +864,7 @@ void NetShutdown()
 	// Sessions left open would still be signalling through the Steam pipe after SteamAPI_Shutdown.
 	if (SteamReady() && SteamNetworkingMessages()) {
 		for (const auto& entry : g_aliasBySteamId) {
-			if (entry.second != kLocalAlias) {
+			if (entry.second != g_localAlias) {
 				SteamNetworkingMessages()->CloseSessionWithUser(IdentityOf(CSteamID(entry.first)));
 			}
 		}
@@ -923,7 +932,14 @@ IN_ADDR NetSecureAddrFor(CSteamID steamId)
 	if (existing != g_aliasBySteamId.end()) {
 		return AliasToInAddr(existing->second);
 	}
-	uint32_t alias = g_nextAlias++;
+	uint32_t alias = AliasForAccount(steamId.GetAccountID());
+	if (g_secure.count(alias)) {
+		// The fallback is local to this machine, so that account's XNADDR ina and alias differ here.
+		XLS_LOG_WARN("net: alias %u.%u.%u.%u is held by another account, %llu takes the next free one.", alias >> 24, (alias >> 16) & 0xFF, (alias >> 8) & 0xFF, alias & 0xFF, steamId.ConvertToUint64());
+		while (g_secure.count(alias)) {
+			alias++;
+		}
+	}
 	SecureEntry entry;
 	entry.steamId = steamId;
 	g_secure[alias] = entry;
@@ -982,7 +998,7 @@ void NetSecureAddrRelease(IN_ADDR alias)
 {
 	std::lock_guard<std::recursive_mutex> lock(g_mutex);
 	uint32_t key = AliasOf(alias);
-	if (key == kLocalAlias) {
+	if (key == g_localAlias) {
 		return;
 	}
 	auto it = g_secure.find(key);
@@ -1008,7 +1024,7 @@ DWORD NetConnectStatus(IN_ADDR alias)
 	if (it == g_secure.end()) {
 		return XNET_CONNECT_STATUS_LOST;
 	}
-	if (it->second.isServer || AliasOf(alias) == kLocalAlias) {
+	if (it->second.isServer || AliasOf(alias) == g_localAlias) {
 		return XNET_CONNECT_STATUS_CONNECTED;
 	}
 	if (!SteamReady() || !SteamNetworkingMessages()) {
@@ -1060,7 +1076,7 @@ void NetConnectStart(IN_ADDR alias)
 bool NetIsLocalAlias(IN_ADDR alias)
 {
 	uint32_t value = AliasOf(alias);
-	return value == kLocalAlias || value == 0x7F000001 || alias.S_un.S_addr == g_localXnaddr.ina.S_un.S_addr;
+	return value == g_localAlias || value == 0x7F000001 || alias.S_un.S_addr == g_localXnaddr.ina.S_un.S_addr;
 }
 
 // --- Keys ----------------------------------------------------------------------------------------
@@ -1797,16 +1813,16 @@ int NetSocketSendTo(SOCKET s, const char* buffer, int length, int flags, const s
 	uint32_t alias = AliasOf(address);
 	if (alias == INADDR_BROADCAST || (alias & 0xFF) == 0xFF) {
 		// Broadcast reaches every peer this machine has an alias for, and the local machine.
-		DeliverLocal(port, AliasToInAddr(kLocalAlias), socket->port, (const uint8_t*)buffer, length);
+		DeliverLocal(port, AliasToInAddr(g_localAlias), socket->port, (const uint8_t*)buffer, length);
 		for (const auto& entry : g_secure) {
-			if (!entry.second.isServer && entry.first != kLocalAlias) {
+			if (!entry.second.isServer && entry.first != g_localAlias) {
 				SendDatagramToUser(entry.second.steamId, socket->port, port, buffer, length);
 			}
 		}
 		return length;
 	}
 	if (NetIsLocalAlias(address)) {
-		DeliverLocal(port, AliasToInAddr(kLocalAlias), socket->port, (const uint8_t*)buffer, length);
+		DeliverLocal(port, AliasToInAddr(g_localAlias), socket->port, (const uint8_t*)buffer, length);
 		return length;
 	}
 	SecureEntry entry;

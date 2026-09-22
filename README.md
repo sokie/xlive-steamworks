@@ -22,8 +22,8 @@ affiliated with Microsoft or Valve.
 
 ## Titles
 
-Street Fighter X Tekken (the GFWL and the Steam build) and Lost Planet 2 run with the drop-in
-dll. Per-title folders, configs and notes live in
+Street Fighter X Tekken (the GFWL and the Steam build), Lost Planet 2 and Resident Evil: Operation
+Raccoon City run with the drop-in dll. Per-title folders, configs and notes live in
 [xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games). A title that imports
 nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
 
@@ -58,7 +58,7 @@ Every identifier a title sees is derived from Steam's own, so two players never 
 | `XNKID` (session id) | the 64-bit Steam lobby id |
 | `XNKEY` | 16 random bytes made by the host, shared through lobby data |
 | `XNADDR` | pseudo 10.x.y.z from the account id, MAC from the account id, `abOnline` = SteamID64 + magic |
-| secure `IN_ADDR` | a local alias (10.0.0.n) per peer, exactly like GFWL's security associations |
+| secure `IN_ADDR` | the peer's XNADDR `ina`, the same 10.x.y.z on every machine |
 | machine id | `0xFA00000000000000 | SteamAccountID` |
 | UDP port | SteamNetworkingMessages channel |
 | TCP port | SteamNetworkingSockets virtual port |
