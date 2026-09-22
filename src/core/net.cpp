@@ -1632,6 +1632,9 @@ int NetSocketSelect(int nfds, fd_set* readfds, fd_set* writefds, fd_set* exceptf
 	DWORD limit = timeout ? (DWORD)(timeout->tv_sec * 1000 + timeout->tv_usec / 1000) : INFINITE;
 	DWORD started = GetTickCount();
 	while (true) {
+		// Steam fills the socket queues only on a pump, so a zero timeout poll would report a
+		// socket empty while its data waits in Steam.
+		NetPump();
 		int ready = 0;
 		{
 			std::lock_guard<std::recursive_mutex> lock(g_mutex);
