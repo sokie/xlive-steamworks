@@ -2,12 +2,6 @@
 
 A Games for Windows LIVE `xlive.dll` wrapper that routes to the Steamworks SDK backend.
 
-Titles that were built against GFWL keep calling `XLiveInitialize`, `XSessionCreate`,
-`XUserWriteAchievements` and the rest of the 270 xlive exports. This library answers those calls
-with Steam users, Steam lobbies, Steam Datagram Relay, Steam achievements, leaderboards and Cloud.
-Nothing in the title has to be rewritten, and a studio that wants to move one subsystem to
-Steamworks directly can do that piece by piece through the extension API.
-
 Two ways to use it:
 
 - **Drop-in dll.** Ship `xlive.dll` and `steam_api.dll` next to the exe. No source change.
@@ -20,10 +14,9 @@ Two ways to use it:
 GFWL is long unsupported, and the titles built on it keep losing online play, achievements and
 cloud saves as publishers strip `xlive.dll` from their Steam builds. 
 
-It is a work in progress. The export table is complete and the we have some initial tests, 
+It is a work in progress. The export table is complete and there are initial tests,
 but only a few titles have been run with it (see below), and each new title
-finds some weird. [XLiveLessNess](https://gitlab.com/GlitchyScripts/xlivelessness) is the
-reference for how the GFWL API behaves, and the Steamworks SDK is fetched from
+turns up something. The Steamworks SDK is fetched from
 [rlabrecque's mirror](https://github.com/rlabrecque/SteamworksSDK). This project is not
 affiliated with Microsoft or Valve.
 
@@ -55,9 +48,6 @@ nothing but `xlive.dll` needs only the two dlls and a config next to the exe.
 | Protected data, PBuffer, data sections, updates | pass-through | not needed on Steam |
 | Guide custom actions, gamer picture awards, TrueSkill service | stubs | no Steam counterpart |
 
-The mapping document has the entry-by-entry table: which exports map one-to-one, which go through
-a middle layer, and which are stubs. the SPA notes explains what happens to the title's SPA.
-
 ## How identity maps
 
 Every identifier a title sees is derived from Steam's own, so two players never collide:
@@ -73,25 +63,6 @@ Every identifier a title sees is derived from Steam's own, so two players never 
 | UDP port | SteamNetworkingMessages channel |
 | TCP port | SteamNetworkingSockets virtual port |
 
-## Quick start for a studio
-
-1. Build (see below) or take `bin/xlive.dll` and `bin/steam_api.dll`.
-2. Put both next to the exe. For development add `steam_appid.txt` with your app id.
-3. On the Steamworks partner site create:
-   - one achievement per SPA achievement, API name `ACH_<id>` (or map names in the config)
-   - one leaderboard per SPA stats view the title writes, name `LB_<viewId>`
-   - Steam Cloud quota (profile file plus whatever the title stores through `XStorage*`)
-   - a rich presence token `#status` with value `%status%` if you want the GFWL presence line
-     in the friends list
-   - one DLC app per GFWL content package, if the title had any.
-4. Run the SPA exporter to export the SPA into a CSV of achievements,
-   a CSV of leaderboards, the achievement icons and a starting `xlive_steamworks.json`.
-5. Copy `config/xlive_steamworks.example.json` to `xlive_steamworks.json` next to the dll and
-   fill in what differs from the defaults.
-6. Set `log.level` to `debug` for the first runs, the log lands next to the dll.
-
-The studio guide walks through each step with the details.
-
 ## Building
 
 ```
@@ -102,40 +73,18 @@ cmake --build build --config Release
 - GFWL titles are 32-bit, so build with `-A Win32`. A 64-bit build works and links
   `steam_api64`.
 - Without `STEAMWORKS_SDK_DIR` the rlabrecque mirror of the SDK is fetched at the pinned
-  revision (v1.62). The code builds against SDK 1.62 and newer. The default is 1.62 because it runs
-  everywhere: the library ships its own `steam_api.dll`, so the SDK version does not have to match
-  the client, and on Linux Proton's `lsteamclient` bridges the Windows `steam_api.dll` only up to
-  the SDK it knows (1.62 in Proton 9, 1.65 in Proton 10 and later). Build against a newer SDK with
-  `-DSTEAMWORKS_SDK_GIT_TAG=df2baabf574a738ef1ea90a7e89339107fc0a279` (v1.65) if a title needs it.
-- `-DXLS_BUILD_STATIC=ON` produces `xlive.lib` for linking into a title. The def file is not used
-  in that configuration.
+  revision (v1.62).
 - The runtime is the static CRT. The dll depends on `steam_api.dll`, `ws2_32`, `winmm`,
   `kernel32` and `user32` only.
-- `-DXLS_BUILD_TESTS=ON` adds `bin/xlive_smoke.exe`, which drives the dll against a running Steam
+- `-DXLS_BUILD_TESTS=ON` adds `bin/xlive_smoke.exe`, which does tests against a running Steam
   client: sign-in, notifications, achievements, profile and storage on Cloud, friends, sockets,
-  a real lobby, a leaderboard write and read. Put `steam_appid.txt` with your app id
+  a real lobby, a leaderboard write and read. Put `steam_appid.txt` with the app id
   next to it, or `480` (Spacewar) for testing only. `--spa Game.exe` loads a real title's SPA for the achievement list.
   `--filters` checks Steam's lobby filters against a lobby shaped like GTA IV's ranked search,
   `--query "4:0x10000056=9,..."` runs an XLAST query of the loaded SPA and logs the filters sent,
   `--voice` runs the voice engine in loopback, and `--pair-host CODE` / `--pair-join CODE`
-  (`--relay-only`) run the two-machine network test that the packer builds.
-- Per-title drop-in folders and owner test kits live in the companion repository
-  [xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games).
-- `xlive_smoke.exe --probe` reports what a Steam app offers (ownership, achievement schema, Cloud,
-  DLC, relay, leaderboards) without creating anything on it. the probe packer
-  [-Title "Name"]` packs it as `bin/xlive-probe-<id>.zip` for another owner of the app to run
-  and send back `probe-results.zip`.
-
-Layout:
-
-```
-tests/smoke/    the Steam smoke test, probe and two-machine pair test
-src/xlive/      GFWL public types and prototypes, plus the extension header
-src/core/       Steam lifetime and pump, overlapped bridge, enumerators, notifications,
-                config, SPA reader, network layer, users, cloud, images
-src/api/        one file per export group, the exported functions themselves
-config/         example configuration
-```
+  (`--relay-only`) run the two-machine network test.
+- Per-title release files in [xlive-steamworks-games](https://github.com/sokie/xlive-steamworks-games).
 
 ## Known limits
 
