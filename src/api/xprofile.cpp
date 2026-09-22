@@ -182,7 +182,17 @@ bool FillSetting(XUSER_PROFILE_SETTING& out, DWORD settingId, XUID xuid, bool lo
 		case XPROFILE_GAMERCARD_TITLES_PLAYED: out.data.nData = 1; break;
 		case XPROFILE_OPTION_CONTROLLER_VIBRATION: out.data.nData = 3; break;
 		case XPROFILE_OPTION_VOICE_VOLUME: out.data.nData = 100; break;
-		case XPROFILE_GAMERCARD_PICTURE_KEY:
+		case XPROFILE_GAMERCARD_PICTURE_KEY: {
+			wchar_t key[17];
+			swprintf_s(key, L"%016llX", (unsigned long long)(local ? xls::UserXuid(userIndex) : xuid));
+			wchar_t* slot = packer.BackString(key);
+			if (!slot) {
+				return false;
+			}
+			out.data.string.cbData = (DWORD)((wcslen(key) + 1) * sizeof(wchar_t));
+			out.data.string.pwszData = slot;
+			break;
+		}
 		case XPROFILE_GAMERCARD_MOTTO: {
 			wchar_t* slot = packer.BackString(L"");
 			if (!slot) {
@@ -434,7 +444,7 @@ DWORD WINAPI XUserReadGamerPictureByKey(const XUSER_DATA* pPictureKey, BOOL fSma
 	if (!pPictureKey) {
 		return ERROR_INVALID_PARAMETER;
 	}
-	// The key GFWL used is unknown to Steam which means titles that pass a XUID as text get that user's avatar.
+	// The key is the XUID as hex text, handed out in XPROFILE_GAMERCARD_PICTURE_KEY. Some titles pass the XUID itself.
 	CSteamID steamId = k_steamIDNil;
 	if (pPictureKey->type == XUSER_DATA_TYPE_UNICODE && pPictureKey->string.pwszData) {
 		XUID xuid = _wcstoui64(pPictureKey->string.pwszData, nullptr, 16);
