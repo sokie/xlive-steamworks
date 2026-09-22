@@ -354,7 +354,8 @@ DWORD WINAPI XEnumerate(HANDLE hEnum, void* pvBuffer, DWORD cbBuffer, DWORD* pcI
 		return ERROR_INVALID_HANDLE;
 	}
 	memset(pvBuffer, 0, cbBuffer);
-	return xls::RunAsync(pOverlapped, [hEnum, pvBuffer, cbBuffer, pcItemsReturned](XOVERLAPPED* overlapped) {
+	bool async = pOverlapped != nullptr;
+	return xls::RunAsync(pOverlapped, [hEnum, pvBuffer, cbBuffer, pcItemsReturned, async](XOVERLAPPED* overlapped) {
 		xls::Enumerator* current = xls::EnumeratorFind(hEnum);
 		if (!current) {
 			xls::OverlappedComplete(overlapped, ERROR_INVALID_HANDLE);
@@ -367,6 +368,11 @@ DWORD WINAPI XEnumerate(HANDLE hEnum, void* pvBuffer, DWORD cbBuffer, DWORD* pcI
 		DWORD result = current->Next(pvBuffer, cbBuffer, &count);
 		if (pcItemsReturned) {
 			*pcItemsReturned = count;
+		}
+		// An asynchronous call reports exhaustion through the extended error, its result stays a success.
+		if (async && result == ERROR_NO_MORE_FILES) {
+			xls::OverlappedComplete(overlapped, ERROR_SUCCESS, count, ERROR_NO_MORE_FILES);
+			return true;
 		}
 		xls::OverlappedComplete(overlapped, result, count);
 		return true;
